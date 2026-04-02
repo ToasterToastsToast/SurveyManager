@@ -1,0 +1,19 @@
+# Python 缓存
+__pycache__/
+*.py[cod]
+*$py.class
+
+# 测试与工具
+.pytest_cache/
+.history/
+
+# 数据库数据
+mongodb_data/
+
+# 日志文件
+*.log
+
+# 虚拟环境 (虽然图中没看到，但建议预防)
+venv/
+.venv/
+env/

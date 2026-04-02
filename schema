@@ -1,0 +1,79 @@
+{
+  "_id": ObjectId,
+  "survey_id": ObjectId, // 所属问卷ID
+  "type": String,        // 题型：single_choice, multiple_choice, text, number
+  "content": String,     // 题目内容
+  "is_required": Boolean, // 是否必答
+  "order": Number,       // 题目顺序
+  "options": [           // 选择题选项
+    {
+      "id": String,      // 选项唯一标识
+      "text": String,    // 选项文本
+      "value": String    // 选项值
+    }
+  ],
+  "min_choices": Number, // 多选题最少选择数量
+  "max_choices": Number, // 多选题最多选择数量
+  "min_length": Number,  // 文本填空最小长度
+  "max_length": Number,  // 文本填空最大长度
+  "min_value": Number,   // 数字填空最小值
+  "max_value": Number,   // 数字填空最大值
+  "is_integer": Boolean, // 数字填空是否必须为整数
+  "jumps": [             // 题目跳转规则
+    {
+      "logic": String,   // 逻辑关系：and, or
+      "conditions": [    // 复合条件
+        {
+          "condition": String, // 条件：equals, greater_than, less_than, contains
+          "value": Mixed,      // 条件值，支持多种类型
+          "question_id": ObjectId // 条件关联的问题ID（可选，默认为当前问题）
+        }
+      ],
+      "target_question_id": ObjectId // 跳转目标题目ID，null表示结束问卷
+    }
+  ],
+  "metadata": Object     // 预留扩展字段
+}
+
+{
+  "_id": ObjectId,
+  "username": String,  // 用户名
+  "password": String,  // 密码（加密存储）
+  "created_at": Date,  // 注册时间
+  "email": String,     // 可选，用于找回密码
+  "created_surveys": [ObjectId], // 用户创建的问卷ID列表
+  "submitted_answers": [ObjectId], // 用户提交的回答ID列表
+  "metadata": Object   // 预留扩展字段
+}
+
+{
+  "_id": ObjectId,
+  "user_id": ObjectId,  // 创建者ID
+  "title": String,      // 问卷标题
+  "description": String, // 问卷说明
+  "is_anonymous": Boolean, // 是否允许匿名填写
+  "allow_multiple_submissions": Boolean, // 是否允许多次填写
+  "status": String,     // 状态：draft, published, closed
+  "created_at": Date,   // 创建时间
+  "published_at": Date, // 发布时间
+  "expire_at": Date,    // 截止时间
+  "slug": String,       // 问卷链接标识
+  "question_count": Number, // 问题数量（冗余字段）
+  "submission_count": Number, // 提交数量（冗余字段）
+  "metadata": Object    // 预留扩展字段
+}
+
+{
+  "_id": ObjectId,
+  "survey_id": ObjectId,   // 所属问卷ID
+  "user_id": ObjectId,     // 填写者ID（匿名时为null）
+  "created_at": Date,      // 填写时间
+  "responses": [           // 回答内容
+    {
+      "question_id": ObjectId, // 问题ID
+      "value": Mixed,          // 回答值：单选/数字为字符串，多选为字符串数组，填空为字符串
+      "text": String           // 填空文本（仅用于填空题型）
+    }
+  ],
+  "metadata": Object       // 预留扩展字段
+}

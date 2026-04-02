@@ -1,0 +1,182 @@
+body {
+    font-family: sans-serif;
+    max-width: 800px;
+    margin: 20px auto;
+    padding: 0 20px;
+    line-height: 1.6;
+    background: #f4f4f4;
+}
+
+.card {
+    background: white;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    margin-bottom: 20px;
+}
+
+h1,
+h2 {
+    color: #333;
+}
+
+input,
+textarea,
+select {
+    width: 100%;
+    padding: 8px;
+    margin: 8px 0;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    box-sizing: border-box;
+}
+
+button {
+    background: #007bff;
+    color: white;
+    border: none;
+    padding: 10px 15px;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+button:hover {
+    background: #0056b3;
+}
+
+.hidden {
+    display: none;
+}
+
+.nav {
+    margin-bottom: 20px;
+}
+
+.nav a {
+    margin-right: 15px;
+    text-decoration: none;
+    color: #007bff;
+    cursor: pointer;
+}
+
+.question-item {
+    border-bottom: 1px solid #eee;
+    padding: 10px 0;
+}
+
+.stats-item {
+    background: #e9ecef;
+    padding: 10px;
+    margin: 5px 0;
+    border-radius: 4px;
+    /* 【新增】强制换行属性 */
+    word-wrap: break-word;
+    /* 兼容性写法 */
+    overflow-wrap: break-word;
+    /* 标准写法 */
+    word-break: break-all;
+    /* 针对没有任何空格的超长字符串强制打断 */
+}
+
+body {
+    font-family: sans-serif;
+    max-width: 800px;
+    margin: 20px auto;
+    padding: 0 20px;
+    line-height: 1.6;
+    background: #f4f4f4;
+}
+.container {
+    width: 100%;
+}
+.card {
+    background: white;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    margin-bottom: 20px;
+}
+h1, h2, h3 {
+    color: #333;
+    margin-top: 0;
+}
+input, textarea, select {
+    width: 100%;
+    padding: 8px;
+    margin: 8px 0;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    box-sizing: border-box;
+}
+button {
+    background: #007bff;
+    color: white;
+    border: none;
+    padding: 10px 15px;
+    border-radius: 4px;
+    cursor: pointer;
+    margin-right: 8px;
+}
+button:hover {
+    background: #0056b3;
+}
+.hidden {
+    display: none;
+}
+.nav {
+    margin-bottom: 20px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #eee;
+}
+.nav a {
+    margin-right: 15px;
+    text-decoration: none;
+    color: #007bff;
+    cursor: pointer;
+}
+.nav a.active {
+    font-weight: bold;
+    border-bottom: 2px solid #007bff;
+    padding-bottom: 8px;
+}
+.question-item {
+    border-bottom: 1px solid #eee;
+    padding: 15px 0;
+}
+.question-item:last-child {
+    border-bottom: none;
+}
+.stats-item {
+    background: #e9ecef;
+    padding: 10px;
+    margin: 5px 0;
+    border-radius: 4px;
+}
+ul {
+    margin: 5px 0;
+    padding-left: 20px;
+}
+label {
+    margin-right: 10px;
+    cursor: pointer;
+}
+
+/* 修复单选框和多选框的宽度与对齐问题 */
+input[type="checkbox"],
+input[type="radio"] {
+    width: auto;
+    /* 恢复原生宽度，取消100% */
+    margin: 0 5px 0 0;
+    /* 在小方块和右侧文字之间留一点间距 */
+    vertical-align: middle;
+    /* 让方块和文字在垂直方向居中对齐 */
+    cursor: pointer;
+}
+
+/* 让包裹多选框的 label 内联显示，防止意外折行 */
+label {
+    margin-right: 15px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+}

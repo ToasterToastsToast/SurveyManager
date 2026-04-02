@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>问卷调查系统</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+
+<body x-data="app">
+    <!-- 非问卷填写页的导航与主容器 -->
+    <template x-if="currentTab !== 'fill-survey'">
+        <div class="container">
+            <h1>问卷调查系统</h1>
+            <!-- 未登录状态：登录/注册 -->
+            <template x-if="!user">
+                <div>
+                    <div class="nav">
+                        <a @click="currentTab = 'login'" :class="{'active': currentTab === 'login'}">登录</a>
+                        <a @click="currentTab = 'register'" :class="{'active': currentTab === 'register'}">注册</a>
+                    </div>
+
+                    <!-- 登录表单 -->
+                    <template x-if="currentTab === 'login'">
+                        <div class="card">
+                            <h2>用户登录</h2>
+                            <input type="text" x-model="loginUsername" placeholder="用户名">
+                            <input type="password" x-model="loginPassword" placeholder="密码">
+                            <button @click="login">登录</button>
+                        </div>
+                    </template>
+
+                    <!-- 注册表单 -->
+                    <template x-if="currentTab === 'register'">
+                        <div class="card">
+                            <h2>用户注册</h2>
+                            <input type="text" x-model="regUsername" placeholder="用户名">
+                            <input type="password" x-model="regPassword" placeholder="密码">
+                            <input type="email" x-model="regEmail" placeholder="邮箱（选填）">
+                            <button @click="register">注册</button>
+                        </div>
+                    </template>
+                </div>
+
+            </template>
+
+            <!-- 已登录状态 -->
+            <template x-if="user">
+                <div>
+                    <div class="nav">
+                        <a @click="currentTab = 'my-surveys'" :class="{'active': currentTab === 'my-surveys'}">我的问卷</a>
+                        <a @click="currentTab = 'create-survey'"
+                            :class="{'active': currentTab === 'create-survey'}">创建问卷</a>
+                        <a @click="showFillPrompt()">填写问卷</a>
+                        <a @click="logout()">退出登录</a>
+                        <span style="float:right;">欢迎，<span x-text="user.username"></span></span>
+                    </div>
+
+                    <!-- 我的问卷列表 -->
+                    <template x-if="currentTab === 'my-surveys'">
+                        <div>
+                            <h2>我的问卷</h2>
+                            <template x-if="surveys.length === 0">
+                                <div class="card">暂无问卷，快去创建一个吧~</div>
+                            </template>
+                            <template x-for="survey in surveys" :key="survey._id">
+                                <div class="card">
+                                    <h3 x-text="survey.title"></h3>
+                                    <p x-text="survey.description"></p>
+                                    <p>状态：<span x-text="survey.status"></span> | 题目数：<span
+                                            x-text="survey.question_count"></span> | 提交数：<span
+                                            x-text="survey.submission_count"></span></p>
+                                    <p>问卷链接：<code x-text="window.location.origin + '/?slug=' + survey.slug"></code></p>
+                                    <button @click="viewSurvey(survey._id)">编辑</button>
+                                    <button @click="publishSurvey(survey._id)"
+                                        x-show="survey.status === 'draft'">发布</button>
+                                    <button @click="closeSurvey(survey._id)"
+                                        x-show="survey.status === 'published'">关闭</button>
+                                    <button @click="viewStats(survey._id)"
+                                        x-show="survey.status !== 'draft'">查看统计</button>
+                                </div>
+                            </template>
+                        </div>
+                    </template>
+
+                    <!-- 创建问卷 -->
+                    <template x-if="currentTab === 'create-survey'">
+                        <div class="card">
+                            <h2>创建新问卷</h2>
+                            <input type="text" x-model="surveyTitle" placeholder="问卷标题（必填）">
+                            <textarea x-model="surveyDesc" placeholder="问卷描述"></textarea>
+                            <div>
+                                <label>
+                                    <input type="checkbox" x-model="surveyAnon"> 匿名填写
+                                </label>
+                                <label style="margin-left:20px;">
+                                    <input type="checkbox" x-model="surveyMulti"> 允许重复提交
+                                </label>
+                            </div>
+                            <div>
+                                <label>截止时间：</label>
+                                <input type="datetime-local" x-model="surveyExpire">
+                            </div>
+                            <button @click="createSurvey()">创建问卷</button>
+                        </div>
+                    </template>
+
+                    <!-- 问卷详情/编辑 -->
+                    <template x-if="currentTab === 'survey-detail'">
+                        <div>
+                            <div class="card">
+                                <h2 x-text="currentSurvey.title"></h2>
+                                <p x-text="currentSurvey.description"></p>
+                                <p>状态：<span x-text="currentSurvey.status"></span></p>
+                                <div style="margin-top: 15px;">
+                                    <button @click="publishSurvey(currentSurvey._id)"
+                                        x-show="currentSurvey.status === 'draft'">发布问卷</button>
+
+                                    <button @click="closeSurvey(currentSurvey._id)"
+                                        x-show="currentSurvey.status === 'published'">关闭问卷</button>
+
+                                    <button @click="currentTab = 'my-surveys'"
+                                        style="background: #6c757d;">返回列表</button>
+                                </div>
+                            </div>
+
+                            <!-- 添加题目 -->
+                            <div class="card">
+                                <h3>添加题目</h3>
+                                <div>
+                                    <label>题型：</label>
+                                    <select x-model="qType">
+                                        <option value="single_choice">单选题</option>
+                                        <option value="multiple_choice">多选题</option>
+                                        <option value="text">文本题</option>
+                                        <option value="number">数字题</option>
+                                    </select>
+                                </div>
+                                <input type="text" x-model="qContent" placeholder="题目内容（必填）">
+                                <label>
+                                    <input type="checkbox" x-model="qRequired"> 必填项
+                                </label>
+
+                                <!-- 单选/多选题选项 -->
+                                <template x-if="qType === 'single_choice' || qType === 'multiple_choice'">
+                                    <div>
+                                        <label>选项（每行一个，格式：值|显示文本，例如：1|是）</label>
+                                        <textarea x-model="qOptions" rows="4" placeholder="1|选项A&#10;2|选项B"></textarea>
+                                    </div>
+                                </template>
+
+                                <!-- 多选题：最少/最多选择数 -->
+                                <template x-if="qType === 'multiple_choice'">
+                                    <div>
+                                        <input type="number" x-model="minChoices" placeholder="最少选择数">
+                                        <input type="number" x-model="maxChoices" placeholder="最多选择数">
+                                    </div>
+                                </template>
+
+                                <!-- 文本题：字数限制 -->
+                                <template x-if="qType === 'text'">
+                                    <div>
+                                        <input type="number" x-model="minLength" placeholder="最少字数">
+                                        <input type="number" x-model="maxLength" placeholder="最多字数">
+                                    </div>
+                                </template>
+
+                                <!-- 数字题：范围限制 -->
+                                <template x-if="qType === 'number'">
+                                    <div>
+                                        <input type="number" x-model="minValue" placeholder="最小值">
+                                        <input type="number" x-model="maxValue" placeholder="最大值">
+                                        <label>
+                                            <input type="checkbox" x-model="isInteger"> 仅允许整数
+                                        </label>
+                                    </div>
+                                </template>
+
+                                <button @click="addQuestion()">添加题目</button>
+                            </div>
+
+                            <!-- 题目列表 -->
+                            <div class="card">
+                                <h3>题目列表</h3>
+                                <template x-for="(q, index) in currentSurveyQuestions" :key="q._id">
+                                    <div class="question-item">
+                                        <p><strong>第 <span x-text="q.order"></span> 题</strong>
+                                            <span x-text="q.is_required ? '[必填]' : ''"></span>
+                                            <span
+                                                x-text="q.type === 'single_choice' ? '[单选]' : q.type === 'multiple_choice' ? '[多选]' : q.type === 'text' ? '[文本]' : '[数字]'"></span>
+                                        </p>
+                                        <p x-text="q.content"></p>
+                                        <template x-if="q.options && q.options.length > 0">
+                                            <ul>
+                                                <template x-for="opt in q.options" :key="opt.value">
+                                                    <li><span x-text="opt.value"></span> | <span
+                                                            x-text="opt.text"></span></li>
+                                                </template>
+                                            </ul>
+                                        </template>
+                                        <button @click="showJumpSettings(q._id, q.order)">设置跳转规则</button>
+                                    </div>
+                                </template>
+                            </div>
+
+                            <!-- 跳转规则弹窗 -->
+                            <div x-show="showJumpModal"
+                                style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;">
+                                <div class="card" style="width:500px;">
+                                    <h3>设置跳转规则</h3>
+                                    <div>
+                                        <label>当答案</label>
+                                        <select x-model="jumpCondition">
+                                            <option value="equals">等于</option>
+                                            <option value="contains">包含</option>
+                                        </select>
+                                        <input type="text" x-model="jumpValue" placeholder="目标值">
+                                        <label>时，跳转到</label>
+                                        <select x-model="jumpTarget">
+                                            <option value="null">直接结束问卷</option>
+                                            <template x-for="q in currentSurveyQuestions" :key="q._id">
+                                                <option :value="q._id" x-text="'第 ' + q.order + ' 题'"></option>
+                                            </template>
+                                        </select>
+                                    </div>
+                                    <div style="margin-top:20px;">
+                                        <button @click="saveJumpRule()">保存规则</button>
+                                        <button @click="showJumpModal = false"
+                                            style="margin-left:10px;background:#6c757d;">取消</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+
+                    <!-- 统计结果 -->
+                    <template x-if="currentTab === 'stats'">
+                        <div>
+                            <h2>问卷统计结果</h2>
+                            <template x-for="(stat, qid) in surveyStatistics" :key="qid">
+                                <div class="card">
+                                    <h3 x-text="stat.content"></h3>
+                                    <p>题型：<span x-text="stat.type"></span> | 总回答数：<span
+                                            x-text="stat.total_responses"></span></p>
+
+                                    <!-- 单选/多选统计 -->
+                                    <template x-if="stat.type === 'single_choice' || stat.type === 'multiple_choice'">
+                                        <div>
+                                            <template x-for="(count, val) in stat.results" :key="val">
+                                                <div class="stats-item">
+                                                    <span x-text="val"></span>：<span x-text="count"></span> 票
+                                                </div>
+                                            </template>
+                                        </div>
+                                    </template>
+
+                                    <!-- 文本题统计 -->
+                                    <template x-if="stat.type === 'text'">
+                                        <div style="max-height: 300px; overflow-y: auto; padding-right: 5px;">
+                                            <template x-for="(text, index) in stat.results" :key="index">
+                                                <div class="stats-item" x-text="text"></div>
+                                            </template>
+                                        </div>
+                                    </template>
+
+                                    <!-- 数字题统计 -->
+                                    <template x-if="stat.type === 'number'">
+                                        <div>
+                                            <p>平均值：<span x-text="stat.results.average"></span></p>
+                                            <p>所有数值：<span x-text="stat.results.values.join(', ')"></span></p>
+                                        </div>
+                                    </template>
+                                </div>
+                            </template>
+                            <button @click="currentTab = 'my-surveys'">返回列表</button>
+                        </div>
+                    </template>
+                </div>
+            </template>
+        </div>
+    </template>
+
+    <!-- 问卷填写页（核心单题渲染逻辑） -->
+    <template x-if="currentTab === 'fill-survey' && fillSurveyData">
+        <div class="container">
+            <div class="card">
+                <h1 x-text="fillSurveyData.survey.title"></h1>
+                <p x-text="fillSurveyData.survey.description"></p>
+            </div>
+
+            <!-- 答题中：单题渲染 -->
+            <template x-if="currentQuestionIndex < currentQuestions.length">
+                <div class="card">
+                    <h3>问题 <span x-text="currentQuestionIndex + 1"></span> / <span
+                            x-text="currentQuestions.length"></span></h3>
+                    <!-- 动态获取当前题目 -->
+                    <template x-for="(q, index) in currentQuestions" :key="q._id">
+                        <div x-show="currentQuestionIndex === index">
+                            <p><strong x-text="q.content"></strong> <span x-text="q.is_required ? '*' : ''"></span></p>
+
+                            <!-- 单选题渲染 -->
+                            <template x-if="q.type === 'single_choice'">
+                                <div>
+                                    <template x-for="opt in q.options" :key="opt.value">
+                                        <div style="margin:10px 0;">
+                                            <input type="radio" :name="`fill-q-${q._id}`"
+                                                :id="`fill-q-${q._id}-${opt.value}`" :value="opt.value">
+                                            <label :for="`fill-q-${q._id}-${opt.value}`" x-text="opt.text"></label>
+                                        </div>
+                                    </template>
+                                </div>
+                            </template>
+
+                            <!-- 多选题渲染 -->
+                            <template x-if="q.type === 'multiple_choice'">
+                                <div>
+                                    <template x-for="opt in q.options" :key="opt.value">
+                                        <div style="margin:10px 0;">
+                                            <input type="checkbox" :name="`fill-q-${q._id}`"
+                                                :id="`fill-q-${q._id}-${opt.value}`" :value="opt.value">
+                                            <label :for="`fill-q-${q._id}-${opt.value}`" x-text="opt.text"></label>
+                                        </div>
+                                    </template>
+                                </div>
+                            </template>
+
+                            <!-- 文本题渲染 -->
+                            <template x-if="q.type === 'text'">
+                                <textarea :id="`fill-q-text-${q._id}`" rows="4" style="width:100%;"></textarea>
+                            </template>
+
+                            <!-- 数字题渲染 -->
+                            <template x-if="q.type === 'number'">
+                                <input type="number" :id="`fill-q-num-${q._id}`" style="width:100%;">
+                            </template>
+                        </div>
+                    </template>
+
+                    <div style="margin-top:20px;">
+                        <button @click="goToNextQuestion()">
+                            <span x-text="currentQuestionIndex < currentQuestions.length - 1 ? '下一题' : '完成答题'"></span>
+                        </button>
+                    </div>
+                </div>
+            </template>
+
+            <template x-if="currentQuestionIndex >= currentQuestions.length">
+                <div class="card" style="text-align: center; padding: 40px 20px;">
+                    <h2 style="color: #28a745;">🎉 答题结束</h2>
+                    <p style="margin-bottom: 20px;">您已完成所有必要的题目，感谢您的耐心填写。</p>
+                    <button @click="submitSurvey()"
+                        style="background: #28a745; font-size: 16px; padding: 12px 24px;">确认提交问卷</button>
+                </div>
+            </template>
+
+        </div>
+    </template>
+
+    <script type="module" src="/static/js/app.js"></script>
+</body>
+
+</html>
