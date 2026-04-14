@@ -1,0 +1,111 @@
+{
+  "_id": ObjectId,
+  "base_question_id": ObjectId, // 【新增】基础题目ID。同一题目的所有版本共享此ID（满足需求八：跨问卷统计）
+  "version": Number,            // 【新增】版本号，如 1, 2, 3（满足需求四、五）
+  "previous_version_id": ObjectId, // 【新增】上一版本ID，用于追溯修改历史（满足需求四）
+  "owner_id": ObjectId,         // 【新增】题目创建者（满足需求一）
+  
+  // 共享与状态管理（满足需求二、六）
+  "is_public": Boolean,         // 【新增】是否公开到公共题库
+  "shared_with_users": [ObjectId], // 【新增】共享给指定用户的ID列表
+  "used_in_surveys": [ObjectId],// 【新增】记录被哪些问卷使用，修改时若此数组不为空，则强制生成新版本
+  
+  // 题目基础内容（保持原样）
+  "type": String,               // 题型 
+  "content": String,            // 题目内容 
+  "options": [                  // 选择题选项 
+    {
+      "id": String,             // 选项唯一标识 
+      "text": String,           // 选项文本 
+      "value": String           // 选项值 [cite: 2]
+    }
+  ],
+  "min_choices": Number,        // 多选题最少选择数量 [cite: 2]
+  "max_choices": Number,        // 多选题最多选择数量 [cite: 2]
+  "min_length": Number,         // 文本填空最小长度 [cite: 2]
+  "max_length": Number,         // 文本填空最大长度 [cite: 2]
+  "min_value": Number,          // 数字填空最小值 [cite: 2]
+  "max_value": Number,          // 数字填空最大值 [cite: 2]
+  "is_integer": Boolean,        // 数字填空是否必须为整数 [cite: 2]
+  
+  // 注意：删除了 is_required, order, jumps 字段。这些是“问卷上下文属性”，移至 Survey 表。
+  "metadata": Object            // 预留扩展字段 [cite: 3]
+}
+
+{
+  "_id": ObjectId,
+  "user_id": ObjectId,          // 创建者ID [cite: 4]
+  "title": String,              // 问卷标题 [cite: 4]
+  "description": String,        // 问卷说明 [cite: 4]
+  "is_anonymous": Boolean,      // 是否允许匿名填写 [cite: 4]
+  "allow_multiple_submissions": Boolean, // 是否允许多次填写 [cite: 4]
+  "status": String,             // 状态：draft, published, closed [cite: 4]
+  "created_at": Date,           // 创建时间 [cite: 4]
+  "published_at": Date,         // 发布时间 [cite: 4]
+  "expire_at": Date,            // 截止时间 [cite: 4]
+  "slug": String,               // 问卷链接标识 [cite: 5]
+  
+  // 【新增】通过数组维护问卷包含的题目及上下文属性
+  "questions": [
+    {
+      "question_id": ObjectId,  // 关联的具体题目【版本】ID
+      "order": Number,          // 题目顺序（从原 Question 表移入） 
+      "is_required": Boolean,   // 是否必答（从原 Question 表移入） 
+      "jumps": [                // 题目跳转规则（从原 Question 表移入） [cite: 2]
+        {
+          "logic": String,      // 逻辑关系：and, or [cite: 2]
+          "conditions": [       // 复合条件 [cite: 2]
+            {
+              "condition": String, // 条件 [cite: 3]
+              "value": Mixed       // 条件值 [cite: 3]
+            }
+          ],
+          "target_question_id": ObjectId // 跳转目标题目ID [cite: 3]
+        }
+      ]
+    }
+  ],
+  "question_count": Number,     // 问题数量 [cite: 5]
+  "submission_count": Number,   // 提交数量 [cite: 5]
+  "metadata": Object            // 预留扩展字段 [cite: 5]
+}
+
+{
+  "_id": ObjectId,
+  "name": String,               // 题库名称
+  "description": String,        // 题库说明
+  "owner_id": ObjectId,         // 题库创建者
+  "is_public": Boolean,         // 是否公共题库
+  "shared_with_users": [ObjectId], // 共享给哪些用户
+  "questions": [ObjectId],      // 包含的 base_question_id 列表（永远指向该题目的最新版本）
+  "created_at": Date,
+  "updated_at": Date
+}
+
+{
+  "_id": ObjectId,
+  "survey_id": ObjectId,        // 所属问卷ID [cite: 5]
+  "user_id": ObjectId,          // 填写者ID [cite: 5]
+  "created_at": Date,           // 填写时间 [cite: 5]
+  "responses": [                // 回答内容 [cite: 5]
+    {
+      "question_id": ObjectId,  // 具体填写的题目【版本】ID [cite: 5]
+      "base_question_id": ObjectId, // 【新增】题目的基础ID（满足需求八：可直接按此ID聚合统计所有问卷数据）
+      "value": Mixed,           // 回答值 [cite: 5]
+      "text": String            // 填空文本 [cite: 6]
+    }
+  ],
+  "metadata": Object            // 预留扩展字段 [cite: 6]
+}
+
+{
+  "_id": ObjectId,
+  "username": String,           // 用户名 [cite: 3]
+  "password": String,           // 密码 [cite: 4]
+  "email": String,              // 邮箱 [cite: 4]
+  "created_surveys": [ObjectId],// 创建的问卷ID [cite: 4]
+  "submitted_answers": [ObjectId], // 提交的回答ID [cite: 4]
+  "question_banks": [ObjectId], // 【新增】用户拥有或加入的题库ID列表
+  "created_at": Date,           // 注册时间 [cite: 4]
+  "metadata": Object            // 预留扩展字段 [cite: 4]
+}
