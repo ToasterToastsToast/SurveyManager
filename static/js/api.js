@@ -78,3 +78,81 @@ export async function submitSurvey(slug, responses) {
 export async function getSurveyStatistics(surveyId) {
     return await api(`/api/surveys/${surveyId}/statistics`);
 }
+
+// 复用题目API
+export async function reuseQuestion(surveyId, questionId) {
+    return await api(`/api/surveys/${surveyId}/reuse_question`, 'POST', {
+        question_id: questionId
+    });
+}
+
+// 题目分享API
+export async function shareQuestion(questionId, isPublic, sharedWithUsers) {
+    return await api(`/api/questions/${questionId}/share`, 'POST', {
+        is_public: isPublic,
+        shared_with_users: sharedWithUsers
+    });
+}
+
+// 题目历史版本API
+export async function getQuestionHistory(questionId) {
+    return await api(`/api/questions/${questionId}/history`);
+}
+
+export async function restoreQuestionVersion(questionId, versionId, surveyId) {
+    return await api(`/api/questions/${questionId}/restore`, 'POST', {
+        version_id: versionId,
+        survey_id: surveyId
+    });
+}
+
+// 题目使用情况API
+export async function getQuestionUsage(questionId) {
+    return await api(`/api/questions/${questionId}/usage`);
+}
+
+// 题库管理API
+export async function createQuestionBank(name, description, isPublic, sharedWithUsers) {
+    return await api('/api/question_banks', 'POST', {
+        name,
+        description,
+        is_public: isPublic,
+        shared_with_users: sharedWithUsers
+    });
+}
+
+export async function getQuestionBanks() {
+    return await api('/api/question_banks');
+}
+
+export async function getQuestionBankDetail(bankId) {
+    return await api(`/api/question_banks/${bankId}`);
+}
+
+export async function updateQuestionBank(bankId, data) {
+    return await api(`/api/question_banks/${bankId}`, 'PUT', data);
+}
+
+export async function deleteQuestionBank(bankId) {
+    return await api(`/api/question_banks/${bankId}`, 'DELETE');
+}
+
+// 题库题目管理API
+export async function addQuestionToBank(bankId, questionId) {
+    return await api(`/api/question_banks/${bankId}/questions`, 'POST', {
+        question_id: questionId
+    });
+}
+
+export async function removeQuestionFromBank(bankId, questionId) {
+    return await api(`/api/question_banks/${bankId}/questions/${questionId}`, 'DELETE');
+}
+
+export async function getBankQuestions(bankId) {
+    return await api(`/api/question_banks/${bankId}/questions`);
+}
+
+// 跨问卷统计API
+export async function getCrossSurveyStatistics(baseQuestionId) {
+    return await api(`/api/questions/${baseQuestionId}/statistics`);
+}

@@ -356,6 +356,356 @@ def update_question(question_id):
 
     return jsonify({'message': '题目更新成功'}), 200
 
+# 【新增】题目分享API
+@app.route('/api/questions/<question_id>/share', methods=['POST'])
+@login_required
+def share_question(question_id):
+    data = request.get_json()
+    is_public = data.get('is_public', False)
+    shared_with_users = data.get('shared_with_users', [])
+    
+    question = questions_collection.find_one({'_id': ObjectId(question_id)})
+    if not question: return jsonify({'error': '题目不存在'}), 404
+    
+    # 鉴权：只有题目所有者可以分享
+    if str(question['owner_id']) != session['user_id']:
+        return jsonify({'error': '无权操作此题目'}), 403
+    
+    # 转换用户ID为ObjectId
+    shared_with_users_ids = [ObjectId(user_id) for user_id in shared_with_users]
+    
+    # 更新题目分享设置
+    questions_collection.update_one(
+        {'_id': ObjectId(question_id)},
+        {'$set': {
+            'is_public': is_public,
+            'shared_with_users': shared_with_users_ids
+        }}
+    )
+    
+    return jsonify({'message': '题目分享设置成功'}), 200
+
+# 【新增】题目历史版本API
+@app.route('/api/questions/<question_id>/history', methods=['GET'])
+@login_required
+def get_question_history(question_id):
+    question = questions_collection.find_one({'_id': ObjectId(question_id)})
+    if not question: return jsonify({'error': '题目不存在'}), 404
+    
+    # 获取base_question_id，用于查找所有相关版本
+    base_question_id = question.get('base_question_id')
+    
+    # 查询所有具有相同base_question_id的题目
+    history = list(questions_collection.find({'base_question_id': base_question_id}))
+    
+    # 按版本号排序
+    history.sort(key=lambda x: x.get('version', 1))
+    
+    return jsonify({'history': history}), 200
+
+# 【新增】恢复题目到旧版本API
+@app.route('/api/questions/<question_id>/restore', methods=['POST'])
+@login_required
+def restore_question_version(question_id):
+    data = request.get_json()
+    version_id = data.get('version_id')
+    survey_id_str = data.get('survey_id')
+    
+    if not version_id or not survey_id_str:
+        return jsonify({'error': '缺少版本ID或问卷ID'}), 400
+    
+    # 获取当前版本
+    current_question = questions_collection.find_one({'_id': ObjectId(question_id)})
+    if not current_question: return jsonify({'error': '当前题目不存在'}), 404
+    
+    # 获取要恢复的旧版本
+    old_version = questions_collection.find_one({'_id': ObjectId(version_id)})
+    if not old_version: return jsonify({'error': '指定版本不存在'}), 404
+    
+    # 鉴权：只有题目所有者可以恢复
+    if str(old_version['owner_id']) != session['user_id']:
+        return jsonify({'error': '无权操作此题目'}), 403
+    
+    # 检查问卷是否存在
+    survey = surveys_collection.find_one({'_id': ObjectId(survey_id_str)})
+    if not survey or str(survey['user_id']) != session['user_id']:
+        return jsonify({'error': '无权操作此问卷'}), 403
+    
+    # 创建新版本，基于旧版本的内容
+    new_q_id = ObjectId()
+    new_question = old_version.copy()
+    new_question['_id'] = new_q_id
+    new_question['version'] = current_question.get('version', 1) + 1
+    new_question['previous_version_id'] = ObjectId(question_id)
+    new_question['used_in_surveys'] = [ObjectId(survey_id_str)]
+    
+    # 保存新版本
+    questions_collection.insert_one(new_question)
+    
+    # 更新问卷中的题目引用
+    survey = surveys_collection.find_one({'_id': ObjectId(survey_id_str)})
+    if survey and 'questions' in survey:
+        updated_questions = []
+        for q in survey['questions']:
+            if str(q['question_id']) == question_id:
+                # 更新为新的题目ID
+                updated_question = q.copy()
+                updated_question['question_id'] = new_q_id
+                updated_questions.append(updated_question)
+            else:
+                updated_questions.append(q)
+        
+        # 保存更新后的问卷
+        surveys_collection.update_one(
+            {'_id': ObjectId(survey_id_str)},
+            {'$set': {'questions': updated_questions}}
+        )
+    
+    return jsonify({'message': '题目版本恢复成功', 'new_question_id': str(new_q_id)}), 200
+
+# 【新增】题目使用情况API
+@app.route('/api/questions/<question_id>/usage', methods=['GET'])
+@login_required
+def get_question_usage(question_id):
+    question = questions_collection.find_one({'_id': ObjectId(question_id)})
+    if not question: return jsonify({'error': '题目不存在'}), 404
+    
+    # 鉴权：只有题目所有者或被分享的用户可以查看
+    if str(question['owner_id']) != session['user_id'] and ObjectId(session['user_id']) not in question.get('shared_with_users', []):
+        return jsonify({'error': '无权查看此题目使用情况'}), 403
+    
+    # 获取题目被使用的问卷ID列表
+    used_in_surveys = question.get('used_in_surveys', [])
+    
+    # 查询这些问卷的详细信息
+    surveys = list(surveys_collection.find({'_id': {'$in': used_in_surveys}}))
+    
+    # 构建使用情况响应
+    usage_info = []
+    for survey in surveys:
+        usage_info.append({
+            'survey_id': str(survey['_id']),
+            'title': survey['title'],
+            'status': survey['status'],
+            'created_at': survey['created_at'],
+            'submission_count': survey.get('submission_count', 0)
+        })
+    
+    return jsonify({'usage': usage_info}), 200
+
+# 【新增】题库管理API
+# 创建题库
+@app.route('/api/question_banks', methods=['POST'])
+@login_required
+def create_question_bank():
+    data = request.get_json()
+    name = data.get('name')
+    description = data.get('description', '')
+    is_public = data.get('is_public', False)
+    shared_with_users = data.get('shared_with_users', [])
+    
+    if not name: return jsonify({'error': '题库名称不能为空'}), 400
+    
+    # 转换用户ID为ObjectId
+    shared_with_users_ids = [ObjectId(user_id) for user_id in shared_with_users]
+    
+    # 创建题库
+    bank_id = question_banks_collection.insert_one({
+        'name': name,
+        'description': description,
+        'owner_id': ObjectId(session['user_id']),
+        'is_public': is_public,
+        'shared_with_users': shared_with_users_ids,
+        'questions': [],
+        'created_at': datetime.datetime.now(),
+        'updated_at': datetime.datetime.now()
+    }).inserted_id
+    
+    # 更新用户的题库列表
+    users_collection.update_one(
+        {'_id': ObjectId(session['user_id'])},
+        {'$push': {'question_banks': bank_id}}
+    )
+    
+    return jsonify({'message': '题库创建成功', 'bank_id': str(bank_id)}), 201
+
+# 获取用户的题库列表
+@app.route('/api/question_banks', methods=['GET'])
+@login_required
+def get_question_banks():
+    # 查询用户拥有的题库
+    user_id = ObjectId(session['user_id'])
+    banks = list(question_banks_collection.find({
+        '$or': [
+            {'owner_id': user_id},
+            {'shared_with_users': user_id},
+            {'is_public': True}
+        ]
+    }))
+    
+    return jsonify({'banks': banks}), 200
+
+# 获取题库详情
+@app.route('/api/question_banks/<bank_id>', methods=['GET'])
+@login_required
+def get_question_bank_detail(bank_id):
+    bank = question_banks_collection.find_one({'_id': ObjectId(bank_id)})
+    if not bank: return jsonify({'error': '题库不存在'}), 404
+    
+    # 鉴权：只有题库所有者、被分享的用户或公开题库可以查看
+    user_id = ObjectId(session['user_id'])
+    if str(bank['owner_id']) != session['user_id'] and user_id not in bank.get('shared_with_users', []) and not bank.get('is_public', False):
+        return jsonify({'error': '无权查看此题库'}), 403
+    
+    return jsonify({'bank': bank}), 200
+
+# 更新题库
+@app.route('/api/question_banks/<bank_id>', methods=['PUT'])
+@login_required
+def update_question_bank(bank_id):
+    data = request.get_json()
+    bank = question_banks_collection.find_one({'_id': ObjectId(bank_id)})
+    if not bank: return jsonify({'error': '题库不存在'}), 404
+    
+    # 鉴权：只有题库所有者可以更新
+    if str(bank['owner_id']) != session['user_id']:
+        return jsonify({'error': '无权操作此题库'}), 403
+    
+    # 构建更新数据
+    update_data = {}
+    if 'name' in data: update_data['name'] = data['name']
+    if 'description' in data: update_data['description'] = data['description']
+    if 'is_public' in data: update_data['is_public'] = data['is_public']
+    if 'shared_with_users' in data:
+        shared_with_users_ids = [ObjectId(user_id) for user_id in data['shared_with_users']]
+        update_data['shared_with_users'] = shared_with_users_ids
+    update_data['updated_at'] = datetime.datetime.now()
+    
+    # 更新题库
+    question_banks_collection.update_one(
+        {'_id': ObjectId(bank_id)},
+        {'$set': update_data}
+    )
+    
+    return jsonify({'message': '题库更新成功'}), 200
+
+# 删除题库
+@app.route('/api/question_banks/<bank_id>', methods=['DELETE'])
+@login_required
+def delete_question_bank(bank_id):
+    bank = question_banks_collection.find_one({'_id': ObjectId(bank_id)})
+    if not bank: return jsonify({'error': '题库不存在'}), 404
+    
+    # 鉴权：只有题库所有者可以删除
+    if str(bank['owner_id']) != session['user_id']:
+        return jsonify({'error': '无权操作此题库'}), 403
+    
+    # 删除题库
+    question_banks_collection.delete_one({'_id': ObjectId(bank_id)})
+    
+    # 从用户的题库列表中移除
+    users_collection.update_one(
+        {'_id': ObjectId(session['user_id'])},
+        {'$pull': {'question_banks': ObjectId(bank_id)}}
+    )
+    
+    return jsonify({'message': '题库删除成功'}), 200
+
+# 【新增】题库题目管理API
+# 向题库添加题目
+@app.route('/api/question_banks/<bank_id>/questions', methods=['POST'])
+@login_required
+def add_question_to_bank(bank_id):
+    data = request.get_json()
+    question_id = data.get('question_id')
+    
+    if not question_id: return jsonify({'error': '题目ID不能为空'}), 400
+    
+    # 检查题库是否存在
+    bank = question_banks_collection.find_one({'_id': ObjectId(bank_id)})
+    if not bank: return jsonify({'error': '题库不存在'}), 404
+    
+    # 鉴权：只有题库所有者可以添加题目
+    if str(bank['owner_id']) != session['user_id']:
+        return jsonify({'error': '无权操作此题库'}), 403
+    
+    # 检查题目是否存在
+    question = questions_collection.find_one({'_id': ObjectId(question_id)})
+    if not question: return jsonify({'error': '题目不存在'}), 404
+    
+    # 获取题目的base_question_id
+    base_question_id = question.get('base_question_id')
+    
+    # 检查题目是否已经在题库中
+    if base_question_id in bank.get('questions', []):
+        return jsonify({'error': '题目已在题库中'}), 400
+    
+    # 向题库添加题目
+    question_banks_collection.update_one(
+        {'_id': ObjectId(bank_id)},
+        {'$push': {'questions': base_question_id},
+         '$set': {'updated_at': datetime.datetime.now()}}
+    )
+    
+    return jsonify({'message': '题目添加到题库成功'}), 201
+
+# 从题库移除题目
+@app.route('/api/question_banks/<bank_id>/questions/<question_id>', methods=['DELETE'])
+@login_required
+def remove_question_from_bank(bank_id, question_id):
+    # 检查题库是否存在
+    bank = question_banks_collection.find_one({'_id': ObjectId(bank_id)})
+    if not bank: return jsonify({'error': '题库不存在'}), 404
+    
+    # 鉴权：只有题库所有者可以移除题目
+    if str(bank['owner_id']) != session['user_id']:
+        return jsonify({'error': '无权操作此题库'}), 403
+    
+    # 检查题目是否存在
+    question = questions_collection.find_one({'_id': ObjectId(question_id)})
+    if not question: return jsonify({'error': '题目不存在'}), 404
+    
+    # 获取题目的base_question_id
+    base_question_id = question.get('base_question_id')
+    
+    # 从题库移除题目
+    question_banks_collection.update_one(
+        {'_id': ObjectId(bank_id)},
+        {'$pull': {'questions': base_question_id},
+         '$set': {'updated_at': datetime.datetime.now()}}
+    )
+    
+    return jsonify({'message': '题目从题库移除成功'}), 200
+
+# 获取题库中的题目
+@app.route('/api/question_banks/<bank_id>/questions', methods=['GET'])
+@login_required
+def get_bank_questions(bank_id):
+    # 检查题库是否存在
+    bank = question_banks_collection.find_one({'_id': ObjectId(bank_id)})
+    if not bank: return jsonify({'error': '题库不存在'}), 404
+    
+    # 鉴权：只有题库所有者、被分享的用户或公开题库可以查看
+    user_id = ObjectId(session['user_id'])
+    if str(bank['owner_id']) != session['user_id'] and user_id not in bank.get('shared_with_users', []) and not bank.get('is_public', False):
+        return jsonify({'error': '无权查看此题库'}), 403
+    
+    # 获取题库中的base_question_id列表
+    base_question_ids = bank.get('questions', [])
+    
+    # 查询每个base_question_id对应的最新版本题目
+    questions = []
+    for base_id in base_question_ids:
+        # 查找该base_question_id对应的最新版本
+        latest_question = questions_collection.find(
+            {'base_question_id': base_id}
+        ).sort('version', -1).limit(1)
+        
+        for q in latest_question:
+            questions.append(q)
+    
+    return jsonify({'questions': questions}), 200
+
 # 【二阶段新增】从题库/历史复用题目
 @app.route('/api/surveys/<survey_id>/reuse_question', methods=['POST'])
 @login_required
@@ -500,11 +850,102 @@ def get_statistics(survey_id, survey):
             
     return jsonify({'statistics': statistics}), 200
 
+# 【新增】跨问卷统计API
+@app.route('/api/questions/<base_question_id>/statistics', methods=['GET'])
+@login_required
+def get_cross_survey_statistics(base_question_id):
+    # 检查题目是否存在
+    question = questions_collection.find_one({'base_question_id': ObjectId(base_question_id)})
+    if not question: return jsonify({'error': '题目不存在'}), 404
+    
+    # 鉴权：只有题目所有者或被分享的用户可以查看
+    if str(question['owner_id']) != session['user_id'] and ObjectId(session['user_id']) not in question.get('shared_with_users', []):
+        return jsonify({'error': '无权查看此题目统计'}), 403
+    
+    # 查询所有包含该base_question_id的回答
+    answers = list(answers_collection.find({'responses.base_question_id': ObjectId(base_question_id)}))
+    
+    # 收集所有相关的问题版本，用于获取题目类型和选项
+    question_versions = list(questions_collection.find({'base_question_id': ObjectId(base_question_id)}))
+    
+    # 取最新版本的题目信息作为统计基础
+    latest_question = None
+    if question_versions:
+        latest_question = sorted(question_versions, key=lambda x: x.get('version', 1), reverse=True)[0]
+    
+    if not latest_question: return jsonify({'error': '题目信息不存在'}), 404
+    
+    # 初始化统计数据
+    statistics = {
+        'content': latest_question['content'],
+        'type': latest_question['type'],
+        'total_responses': 0,
+        'results': {},
+        'surveys': []
+    }
+    
+    # 统计不同题型的回答
+    options = {option['value']: 0 for option in latest_question.get('options', [])}
+    values, text_responses = [], []
+    survey_ids = set()
+    
+    for answer in answers:
+        survey_ids.add(str(answer['survey_id']))
+        for response in answer['responses']:
+            if response['base_question_id'] == ObjectId(base_question_id):
+                statistics['total_responses'] += 1
+                val = response.get('value')
+                
+                if latest_question['type'] in ['single_choice', 'multiple_choice']:
+                    val_list = val if isinstance(val, list) else [val]
+                    for v in val_list:
+                        v_str = str(v)
+                        options[v_str] = options.get(v_str, 0) + 1
+                elif latest_question['type'] == 'text':
+                    text_responses.append(response.get('text') or val)
+                elif latest_question['type'] == 'number':
+                    try: values.append(float(val))
+                    except: pass
+    
+    # 构建统计结果
+    if latest_question['type'] in ['single_choice', 'multiple_choice']:
+        statistics['results'] = options
+    elif latest_question['type'] == 'text':
+        statistics['results'] = text_responses
+    elif latest_question['type'] == 'number':
+        statistics['results'] = {'values': values, 'average': round(sum(values) / len(values), 2) if values else 0}
+    
+    # 添加使用此题的问卷数量
+    statistics['surveys'] = list(survey_ids)
+    statistics['survey_count'] = len(survey_ids)
+    
+    return jsonify({'statistics': statistics}), 200
+
 @app.errorhandler(Exception)
 def handle_exception(e):
     if isinstance(e, HTTPException): return e
     logger.error(f'系统发生未捕获异常：{str(e)}', exc_info=True)
     return jsonify({'error': '服务器内部错误'}), 500
+
+# 根路径路由，返回index.html
+@app.route('/')
+def index():
+    return send_from_directory('static', 'index.html')
+
+# 静态文件路由
+@app.route('/static/<path:path>')
+def static_files(path):
+    return send_from_directory('static', path)
+
+# 检查用户登录状态的API
+@app.route('/api/me', methods=['GET'])
+def get_current_user():
+    if 'user_id' in session:
+        return jsonify({
+            'user_id': session['user_id'],
+            'username': session['username']
+        })
+    return jsonify({'error': '未登录'}), 401
 
 if __name__ == '__main__':
     os.makedirs('static', exist_ok=True)

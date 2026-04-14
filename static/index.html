@@ -52,6 +52,8 @@
                         <a @click="currentTab = 'my-surveys'" :class="{'active': currentTab === 'my-surveys'}">我的问卷</a>
                         <a @click="currentTab = 'create-survey'"
                             :class="{'active': currentTab === 'create-survey'}">创建问卷</a>
+                        <a @click="currentTab = 'question-banks'"
+                            :class="{'active': currentTab === 'question-banks'}">题库管理</a>
                         <a @click="showFillPrompt()">填写问卷</a>
                         <a @click="logout()">退出登录</a>
                         <span style="float:right;">欢迎，<span x-text="user.username"></span></span>
@@ -128,6 +130,9 @@
                             <!-- 添加题目 -->
                             <div class="card">
                                 <h3>添加题目</h3>
+                                <div style="margin-bottom:15px;">
+                                    <button @click="showReuseFromBankModal()">从题库选择题目</button>
+                                </div>
                                 <div>
                                     <label>题型：</label>
                                     <select x-model="qType">
@@ -199,7 +204,15 @@
                                                 </template>
                                             </ul>
                                         </template>
-                                        <button @click="showJumpSettings(q._id, q.order)">设置跳转规则</button>
+                                        <div style="margin-top:10px;">
+                                            <button @click="showJumpSettings(q._id, q.order)">设置跳转规则</button>
+                                            <button @click="editQuestion(q)">修改题目</button>
+                                            <button @click="showShareModalFunc(q._id)">分享题目</button>
+                                            <button @click="showHistoryModalFunc(q._id)">历史版本</button>
+                                            <button @click="showUsageModalFunc(q._id)">使用情况</button>
+                                            <button @click="showCrossStatsModalFunc(q.base_question_id)">跨问卷统计</button>
+                                            <button @click="showAddToBankModal(q._id)">添加到题库</button>
+                                        </div>
                                     </div>
                                 </template>
                             </div>
@@ -231,6 +244,188 @@
                                     </div>
                                 </div>
                             </div>
+
+                            <!-- 题目分享弹窗 -->
+                            <div x-show="showShareModal"
+                                style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;">
+                                <div class="card" style="width:500px;">
+                                    <h3>分享题目</h3>
+                                    <div>
+                                        <label>
+                                            <input type="checkbox" x-model="shareIsPublic"> 公开到公共题库
+                                        </label>
+                                    </div>
+                                    <div>
+                                        <label>共享给用户（逗号分隔用户ID）：</label>
+                                        <input type="text" x-model="shareUsers" placeholder="例如：123456,789012">
+                                    </div>
+                                    <div style="margin-top:20px;">
+                                        <button @click="saveShareSettings()">保存设置</button>
+                                        <button @click="showShareModal = false"
+                                            style="margin-left:10px;background:#6c757d;">取消</button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 题目历史版本弹窗 -->
+                            <div x-show="showHistoryModal"
+                                style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;">
+                                <div class="card" style="width:600px;max-height:80vh;overflow-y:auto;">
+                                    <h3>题目历史版本</h3>
+                                    <template x-for="(version, index) in questionHistory" :key="version._id">
+                                        <div class="question-item" style="border-bottom:1px solid #eee;padding:10px 0;">
+                                            <p>版本：<span x-text="version.version"></span></p>
+                                            <p>内容：<span x-text="version.content"></span></p>
+                                            <p>创建时间：<span x-text="version.created_at"></span></p>
+                                            <button @click="restoreVersion(shareQuestionId, version._id)">恢复此版本</button>
+                                        </div>
+                                    </template>
+                                    <div style="margin-top:20px;">
+                                        <button @click="showHistoryModal = false"
+                                            style="background:#6c757d;">关闭</button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 题目使用情况弹窗 -->
+                            <div x-show="showUsageModal"
+                                style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;">
+                                <div class="card" style="width:600px;max-height:80vh;overflow-y:auto;">
+                                    <h3>题目使用情况</h3>
+                                    <template x-if="questionUsage.length === 0">
+                                        <p>该题目尚未被任何问卷使用</p>
+                                    </template>
+                                    <template x-for="usage in questionUsage" :key="usage.survey_id">
+                                        <div class="question-item" style="border-bottom:1px solid #eee;padding:10px 0;">
+                                            <p>问卷：<span x-text="usage.title"></span></p>
+                                            <p>状态：<span x-text="usage.status"></span></p>
+                                            <p>提交数：<span x-text="usage.submission_count"></span></p>
+                                            <p>创建时间：<span x-text="usage.created_at"></span></p>
+                                        </div>
+                                    </template>
+                                    <div style="margin-top:20px;">
+                                        <button @click="showUsageModal = false" style="background:#6c757d;">关闭</button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 跨问卷统计弹窗 -->
+                            <div x-show="showCrossStatsModal"
+                                style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;">
+                                <div class="card" style="width:600px;">
+                                    <h3>跨问卷统计结果</h3>
+                                    <template x-if="crossStats">
+                                        <div>
+                                            <h4 x-text="crossStats.content"></h4>
+                                            <p>题型：<span x-text="crossStats.type"></span></p>
+                                            <p>总回答数：<span x-text="crossStats.total_responses"></span></p>
+                                            <p>使用问卷数：<span x-text="crossStats.survey_count"></span></p>
+
+                                            <!-- 单选/多选统计 -->
+                                            <template
+                                                x-if="crossStats.type === 'single_choice' || crossStats.type === 'multiple_choice'">
+                                                <div>
+                                                    <h5>选项分布</h5>
+                                                    <template x-for="(count, val) in crossStats.results" :key="val">
+                                                        <div class="stats-item">
+                                                            <span x-text="val"></span>：<span x-text="count"></span> 票
+                                                        </div>
+                                                    </template>
+                                                </div>
+                                            </template>
+
+                                            <!-- 文本题统计 -->
+                                            <template x-if="crossStats.type === 'text'">
+                                                <div style="max-height: 300px; overflow-y: auto; padding-right: 5px;">
+                                                    <h5>回答内容</h5>
+                                                    <template x-for="(text, index) in crossStats.results" :key="index">
+                                                        <div class="stats-item" x-text="text"></div>
+                                                    </template>
+                                                </div>
+                                            </template>
+
+                                            <!-- 数字题统计 -->
+                                            <template x-if="crossStats.type === 'number'">
+                                                <div>
+                                                    <h5>统计结果</h5>
+                                                    <p>平均值：<span x-text="crossStats.results.average"></span></p>
+                                                    <p>所有数值：<span x-text="crossStats.results.values.join(', ')"></span>
+                                                    </p>
+                                                </div>
+                                            </template>
+                                        </div>
+                                    </template>
+                                    <div style="margin-top:20px;">
+                                        <button @click="showCrossStatsModal = false"
+                                            style="background:#6c757d;">关闭</button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 修改题目弹窗 -->
+                            <div x-show="showEditModal"
+                                style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;">
+                                <div class="card" style="width:600px;">
+                                    <h3>修改题目</h3>
+                                    <div>
+                                        <label>题型：</label>
+                                        <select x-model="qType">
+                                            <option value="single_choice">单选题</option>
+                                            <option value="multiple_choice">多选题</option>
+                                            <option value="text">文本题</option>
+                                            <option value="number">数字题</option>
+                                        </select>
+                                    </div>
+                                    <input type="text" x-model="qContent" placeholder="题目内容（必填）">
+                                    <label>
+                                        <input type="checkbox" x-model="qRequired"> 必填项
+                                    </label>
+
+                                    <!-- 单选/多选题选项 -->
+                                    <template x-if="qType === 'single_choice' || qType === 'multiple_choice'">
+                                        <div>
+                                            <label>选项（每行一个，格式：值|显示文本，例如：1|是）</label>
+                                            <textarea x-model="qOptions" rows="4"
+                                                placeholder="1|选项A&#10;2|选项B"></textarea>
+                                        </div>
+                                    </template>
+
+                                    <!-- 多选题：最少/最多选择数 -->
+                                    <template x-if="qType === 'multiple_choice'">
+                                        <div>
+                                            <input type="number" x-model="minChoices" placeholder="最少选择数">
+                                            <input type="number" x-model="maxChoices" placeholder="最多选择数">
+                                        </div>
+                                    </template>
+
+                                    <!-- 文本题：字数限制 -->
+                                    <template x-if="qType === 'text'">
+                                        <div>
+                                            <input type="number" x-model="minLength" placeholder="最少字数">
+                                            <input type="number" x-model="maxLength" placeholder="最多字数">
+                                        </div>
+                                    </template>
+
+                                    <!-- 数字题：范围限制 -->
+                                    <template x-if="qType === 'number'">
+                                        <div>
+                                            <input type="number" x-model="minValue" placeholder="最小值">
+                                            <input type="number" x-model="maxValue" placeholder="最大值">
+                                            <label>
+                                                <input type="checkbox" x-model="isInteger"> 仅允许整数
+                                            </label>
+                                        </div>
+                                    </template>
+
+                                    <div style="margin-top:20px;">
+                                        <button @click="saveQuestionChanges()">保存修改</button>
+                                        <button @click="showEditModal = false"
+                                            style="margin-left:10px;background:#6c757d;">取消</button>
+                                    </div>
+                                </div>
+                            </div>
+
+
                         </div>
                     </template>
 
@@ -274,6 +469,127 @@
                                 </div>
                             </template>
                             <button @click="currentTab = 'my-surveys'">返回列表</button>
+                        </div>
+                    </template>
+
+                    <!-- 题库管理 -->
+                    <template x-if="currentTab === 'question-banks'">
+                        <div>
+                            <h2>题库管理</h2>
+
+                            <!-- 创建题库 -->
+                            <div class="card">
+                                <h3>创建新题库</h3>
+                                <input type="text" x-model="bankName" placeholder="题库名称（必填）">
+                                <textarea x-model="bankDesc" placeholder="题库描述"></textarea>
+                                <div>
+                                    <label>
+                                        <input type="checkbox" x-model="bankPublic"> 公开题库
+                                    </label>
+                                </div>
+                                <div>
+                                    <label>共享给用户（逗号分隔用户ID）：</label>
+                                    <input type="text" x-model="bankSharedUsers" placeholder="例如：123456,789012">
+                                </div>
+                                <button @click="createBank()">创建题库</button>
+                            </div>
+
+                            <!-- 题库列表 -->
+                            <div>
+                                <h3>我的题库</h3>
+                                <template x-if="questionBanks.length === 0">
+                                    <div class="card">暂无题库，快去创建一个吧~</div>
+                                </template>
+                                <template x-for="bank in questionBanks" :key="bank._id">
+                                    <div class="card">
+                                        <h3 x-text="bank.name"></h3>
+                                        <p x-text="bank.description"></p>
+                                        <p>状态：<span x-text="bank.is_public ? '公开' : '私有'"></span> | 题目数：<span
+                                                x-text="bank.questions.length"></span></p>
+                                        <button @click="viewBank(bank._id)">查看详情</button>
+                                        <button @click="deleteBank(bank._id)" style="background: #dc3545;">删除</button>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+                    </template>
+
+                    <!-- 题库详情 -->
+                    <template x-if="currentTab === 'bank-detail'">
+                        <div>
+                            <div class="card">
+                                <h2 x-text="currentBank.name"></h2>
+                                <p x-text="currentBank.description"></p>
+                                <p>状态：<span x-text="currentBank.is_public ? '公开' : '私有'"></span> | 题目数：<span
+                                        x-text="currentBank.questions.length"></span></p>
+                                <button @click="currentTab = 'question-banks'"
+                                    style="background: #6c757d;">返回题库列表</button>
+                            </div>
+
+                            <!-- 题库题目列表 -->
+                            <div class="card">
+                                <h3>题库题目</h3>
+                                <template x-if="currentBankQuestions.length === 0">
+                                    <p>暂无题目，快去添加吧~</p>
+                                </template>
+                                <template x-for="q in currentBankQuestions" :key="q._id">
+                                    <div class="question-item">
+                                        <p><strong>题目</strong>
+                                            <span
+                                                x-text="q.type === 'single_choice' ? '[单选]' : q.type === 'multiple_choice' ? '[多选]' : q.type === 'text' ? '[文本]' : '[数字]'"></span>
+                                        </p>
+                                        <p x-text="q.content"></p>
+                                        <template x-if="q.options && q.options.length > 0">
+                                            <ul>
+                                                <template x-for="opt in q.options" :key="opt.value">
+                                                    <li><span x-text="opt.value"></span> | <span
+                                                            x-text="opt.text"></span></li>
+                                                </template>
+                                            </ul>
+                                        </template>
+                                        <button @click="removeQuestionFromBank(currentBank._id, q._id)">从题库移除</button>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+                    </template>
+
+                    <!-- 从题库选题 -->
+                    <template x-if="currentTab === 'reuse-from-bank'">
+                        <div>
+                            <h2>从题库选题</h2>
+                            <template x-for="bank in questionBanks" :key="bank._id">
+                                <div class="card">
+                                    <h3 x-text="bank.name"></h3>
+                                    <template x-if="bank.questions_list && bank.questions_list.length === 0">
+                                        <p>此题库暂无题目</p>
+                                    </template>
+                                    <template x-for="q in bank.questions_list" :key="q._id">
+                                        <div class="question-item">
+                                            <p x-text="q.content"></p>
+                                            <button
+                                                @click="reuseQuestionFromBank(currentSurveyId, q._id)">添加到问卷</button>
+                                        </div>
+                                    </template>
+                                </div>
+                            </template>
+                            <button @click="currentTab = 'survey-detail'" style="background: #6c757d;">返回问卷编辑</button>
+                        </div>
+                    </template>
+
+                    <!-- 添加到题库 -->
+                    <template x-if="currentTab === 'add-to-bank'">
+                        <div>
+                            <h2>添加到题库</h2>
+                            <p>请选择要添加到的题库：</p>
+                            <template x-for="bank in questionBanks" :key="bank._id">
+                                <div class="card">
+                                    <h3 x-text="bank.name"></h3>
+                                    <p x-text="bank.description"></p>
+                                    <button @click="confirmAddToBank(bank._id, shareQuestionId)">添加到该题库</button>
+                                </div>
+                            </template>
+                            <button @click="currentTab = 'survey-detail'" style="background: #6c757d;">取消</button>
                         </div>
                     </template>
                 </div>
@@ -356,6 +672,22 @@
 
         </div>
     </template>
+
+    <!-- 填写问卷弹窗 -->
+    <div x-show="showFillModal"
+        style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;">
+        <div class="card" style="width:400px;">
+            <h3>填写问卷</h3>
+            <div>
+                <label>请输入问卷的 Slug：</label>
+                <input type="text" x-model="fillSlug" placeholder="例如：abc123">
+            </div>
+            <div style="margin-top:20px;">
+                <button @click="submitFillSlug()">确定</button>
+                <button @click="showFillModal = false" style="margin-left:10px;background:#6c757d;">取消</button>
+            </div>
+        </div>
+    </div>
 
     <script type="module" src="/static/js/app.js"></script>
 </body>
