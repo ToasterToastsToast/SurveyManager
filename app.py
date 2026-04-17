@@ -306,30 +306,28 @@ def add_question(survey_id, survey):
     )
     
     return jsonify({'message': '问题添加成功', 'question_id': str(new_q_id)}), 201
-
 @app.route('/api/questions/<question_id>', methods=['PUT'])
 @login_required
 def update_question(question_id):
-    # 【二阶段重构】引入写时复制（Copy-on-Write）版本控制
     data = request.get_json()
     survey_id_str = data.get('survey_id') # 前端修改时必须传入当前所在的 survey_id
-    if not survey_id_str:
-        return jsonify({'error': '缺少 survey_id 参数'}), 400
-        
+    save_as_new = data.get('save_as_new', False) # 是否另存为新题目
+    
     question = questions_collection.find_one({'_id': ObjectId(question_id)})
     if not question: return jsonify({'error': '题目不存在'}), 404
     
     # 鉴权
-    survey = surveys_collection.find_one({'_id': ObjectId(survey_id_str)})
-    if not survey or str(survey['user_id']) != session['user_id']:
-        return jsonify({'error': '无权操作'}), 403
+    if survey_id_str:
+        survey = surveys_collection.find_one({'_id': ObjectId(survey_id_str)})
+        if not survey or str(survey['user_id']) != session['user_id']:
+            return jsonify({'error': '无权操作'}), 403
+        if survey['status'] != 'draft':
+            return jsonify({'error': '已发布的问卷里的题目不能被修改'}), 403
+    else:
+        if str(question['owner_id']) != session['user_id'] and ObjectId(session['user_id']) not in question.get('shared_with_users', []):
+            return jsonify({'error': '无权操作'}), 403
 
-    # 检查问卷状态，如果不是草稿状态，拒绝修改
-    if survey['status'] != 'draft':
-        return jsonify({'error': '已发布的问卷里的题目不能被修改'}), 403
-
-    # ================= 分发更新 =================
-    # 1. 更新上下文属性（is_required, jumps）直接在 questions 表更新
+    # 上下文属性更新准备
     update_q_data = {}
     if 'is_required' in data: update_q_data['is_required'] = data['is_required']
     if 'jumps' in data:
@@ -340,25 +338,51 @@ def update_question(question_id):
                 if cond.get('question_id'): cond['question_id'] = ObjectId(cond['question_id'])
         update_q_data['jumps'] = jumps
 
-    # 2. 检查是否修改了题干核心内容 (content, options 等)
-    core_fields_updated = any(k in data for k in ['content', 'options', 'type', 'min_choices', 'max_choices'])
+    core_fields_updated = any(k in data for k in ['content', 'options', 'type', 'min_choices', 'max_choices', 'min_length', 'max_length', 'min_value', 'max_value', 'is_integer'])
     
-    if core_fields_updated:
-        # 核心逻辑：如果此题被其他问卷使用，触发版本分裂
-        if len(question.get('used_in_surveys', [])) > 1:
-            new_q_id = ObjectId()
-            new_question = question.copy()
-            new_question['_id'] = new_q_id
-            new_question['version'] = question.get('version', 1) + 1
-            new_question['previous_version_id'] = question['_id']
-            new_question['used_in_surveys'] = [ObjectId(survey_id_str)] # 新版本只被当前问卷使用
-            new_question['survey_id'] = ObjectId(survey_id_str) # 更新为当前问卷ID
-            
-            # 应用修改
-            if 'content' in data: new_question['content'] = data['content']
-            if 'options' in data: new_question['options'] = data['options']
-            if 'is_required' in data: new_question['is_required'] = data['is_required']
-            if 'jumps' in data: new_question['jumps'] = data['jumps']
+    # 无论是否选择另存为新题目，都需要检查是否被已发布的问卷使用
+    used_in_surveys = question.get('used_in_surveys', [])
+    is_used_in_published_survey = False
+    
+    if used_in_surveys:
+        surveys = list(surveys_collection.find({'_id': {'$in': used_in_surveys}}))
+        for survey in surveys:
+            if survey['status'] != 'draft':
+                is_used_in_published_survey = True
+                break
+    
+    if is_used_in_published_survey:
+        if not save_as_new:
+            return jsonify({'error': '该题目已在已发布的问卷中使用，只能另存为新题目'}), 400
+        save_as_new = True
+    
+    if save_as_new:
+        # 另存为新题目
+        new_q_id = ObjectId()
+        new_question = question.copy()
+        new_question['_id'] = new_q_id
+        new_question['version'] = question.get('version', 1) + 1
+        new_question['previous_version_id'] = question['_id']
+        
+        # 应用修改
+        if 'content' in data: new_question['content'] = data['content']
+        if 'options' in data: new_question['options'] = data['options']
+        if 'type' in data: new_question['type'] = data['type']
+        if 'min_choices' in data: new_question['min_choices'] = data['min_choices']
+        if 'max_choices' in data: new_question['max_choices'] = data['max_choices']
+        if 'min_length' in data: new_question['min_length'] = data['min_length']
+        if 'max_length' in data: new_question['max_length'] = data['max_length']
+        if 'min_value' in data: new_question['min_value'] = data['min_value']
+        if 'max_value' in data: new_question['max_value'] = data['max_value']
+        if 'is_integer' in data: new_question['is_integer'] = data['is_integer']
+        if 'is_required' in data: new_question['is_required'] = data['is_required']
+        if 'jumps' in data: new_question['jumps'] = data['jumps']
+        
+        if survey_id_str:
+            # 问卷内另存：保持 base_question_id 延续版本链
+            new_question['base_question_id'] = question.get('base_question_id', question['_id'])
+            new_question['survey_id'] = ObjectId(survey_id_str)
+            new_question['used_in_surveys'] = [ObjectId(survey_id_str)]
             
             questions_collection.insert_one(new_question)
             
@@ -368,13 +392,94 @@ def update_question(question_id):
                 {'$pull': {'used_in_surveys': ObjectId(survey_id_str)}}
             )
         else:
-            # 没有被复用，直接原位更新题目集合
+            # 【修复问题1】：题库内另存为新题，作为独立分支克隆（赋予全新的 base_question_id）
+            # 这样题库读取列表时，v1 和 v2 会作为独立的两道题双双展示
+            new_question['base_question_id'] = new_q_id
+            if 'survey_id' in new_question:
+                del new_question['survey_id']
+            new_question['used_in_surveys'] = []
+            
+            questions_collection.insert_one(new_question)
+            
+            # 更新题库，将新题目添加到题库中
+            # 注意：必须用旧题的 base_question_id 来找包含旧题的题库，不能用 ObjectId(question_id)
+            old_base_id = question.get('base_question_id', question['_id'])
+            banks = list(question_banks_collection.find({'questions': old_base_id}))
+            for bank in banks:
+                question_banks_collection.update_one(
+                    {'_id': bank['_id']},
+                    {'$push': {'questions': new_q_id}} # 压入新题目的独立 base_question_id
+                )
+    else:
+        # 更新旧题目（覆盖旧题）
+        if core_fields_updated:
+            # 【修复问题2】：废弃 history_logs 数组
+            # 复制一份当前文档的完整状态作为快照，插入集合中。这样 get_question_history 路由就能查到这条旧记录了
+            history_snapshot = question.copy()
+            history_snapshot['_id'] = ObjectId()  # 赋予独立ID作为历史存档
+            history_snapshot['is_history_snapshot'] = True # 标记此记录仅为历史存档
+            
+            # 应用修改到外层待更新字典
             if 'content' in data: update_q_data['content'] = data['content']
             if 'options' in data: update_q_data['options'] = data['options']
-            questions_collection.update_one({'_id': ObjectId(question_id)}, {'$set': update_q_data})
-    elif update_q_data:
-        # 只更新上下文属性
-        questions_collection.update_one({'_id': ObjectId(question_id)}, {'$set': update_q_data})
+            if 'type' in data: update_q_data['type'] = data['type']
+            if 'min_choices' in data: update_q_data['min_choices'] = data['min_choices']
+            if 'max_choices' in data: update_q_data['max_choices'] = data['max_choices']
+            if 'min_length' in data: update_q_data['min_length'] = data['min_length']
+            if 'max_length' in data: update_q_data['max_length'] = data['max_length']
+            if 'min_value' in data: update_q_data['min_value'] = data['min_value']
+            if 'max_value' in data: update_q_data['max_value'] = data['max_value']
+            if 'is_integer' in data: update_q_data['is_integer'] = data['is_integer']
+            
+            update_q_data['version'] = question.get('version', 1) + 1
+            
+            # 1. 插入历史快照到集合中
+            questions_collection.insert_one(history_snapshot)
+            
+            # 2. 原地覆盖更新当前文档，保持现有问卷依然能通过 _id 关联到新内容
+            questions_collection.update_one(
+                {'_id': ObjectId(question_id)}, 
+                {'$set': update_q_data}
+            )
+        else:
+            # 更新旧题目（覆盖旧题）
+
+            # ✅ 情况1：仅上下文更新（关键修复点）
+            if update_q_data and not core_fields_updated:
+                questions_collection.update_one(
+                    {'_id': ObjectId(question_id)},
+                    {'$set': update_q_data}
+                )
+                return jsonify({'message': '题目更新成功'}), 200
+
+            # ✅ 情况2：核心字段更新（才允许写历史）
+            if core_fields_updated:
+                history_snapshot = question.copy()
+                history_snapshot['_id'] = ObjectId()
+                history_snapshot['is_history_snapshot'] = True
+
+                # 应用核心字段更新
+                if 'content' in data: update_q_data['content'] = data['content']
+                if 'options' in data: update_q_data['options'] = data['options']
+                if 'type' in data: update_q_data['type'] = data['type']
+                if 'min_choices' in data: update_q_data['min_choices'] = data['min_choices']
+                if 'max_choices' in data: update_q_data['max_choices'] = data['max_choices']
+                if 'min_length' in data: update_q_data['min_length'] = data['min_length']
+                if 'max_length' in data: update_q_data['max_length'] = data['max_length']
+                if 'min_value' in data: update_q_data['min_value'] = data['min_value']
+                if 'max_value' in data: update_q_data['max_value'] = data['max_value']
+                if 'is_integer' in data: update_q_data['is_integer'] = data['is_integer']
+
+                update_q_data['version'] = question.get('version', 1) + 1
+
+                # 插入历史快照
+                questions_collection.insert_one(history_snapshot)
+
+                # 更新原文档
+                questions_collection.update_one(
+                    {'_id': ObjectId(question_id)},
+                    {'$set': update_q_data}
+                )
 
     return jsonify({'message': '题目更新成功'}), 200
 
@@ -493,10 +598,29 @@ def get_question_usage(question_id):
         return jsonify({'error': '无权查看此题目使用情况'}), 403
     
     # 获取题目被使用的问卷ID列表
-    used_in_surveys = question.get('used_in_surveys', [])
+    used_in_surveys = set(question.get('used_in_surveys', []))
+    
+    # 查找所有相关版本的题目（包括当前版本和所有历史版本）
+    # 1. 查找所有以当前题目为前一版本的题目
+    related_questions = list(questions_collection.find({'previous_version_id': ObjectId(question_id)}))
+    # 2. 查找当前题目本身
+    related_questions.append(question)
+    # 3. 查找所有历史版本（通过previous_version_id链）
+    current_question = question
+    while current_question.get('previous_version_id'):
+        prev_question = questions_collection.find_one({'_id': current_question['previous_version_id']})
+        if prev_question:
+            related_questions.append(prev_question)
+            current_question = prev_question
+        else:
+            break
+    
+    # 汇总所有版本的使用情况
+    for q in related_questions:
+        used_in_surveys.update(q.get('used_in_surveys', []))
     
     # 查询这些问卷的详细信息
-    surveys = list(surveys_collection.find({'_id': {'$in': used_in_surveys}}))
+    surveys = list(surveys_collection.find({'_id': {'$in': list(used_in_surveys)}}))
     
     # 构建使用情况响应
     usage_info = []
@@ -520,12 +644,16 @@ def create_question_bank():
     name = data.get('name')
     description = data.get('description', '')
     is_public = data.get('is_public', False)
-    shared_with_users = data.get('shared_with_users', [])
+    shared_with_usernames = data.get('shared_with_users', [])
     
     if not name: return jsonify({'error': '题库名称不能为空'}), 400
     
-    # 转换用户ID为ObjectId
-    shared_with_users_ids = [ObjectId(user_id) for user_id in shared_with_users]
+    # 根据用户名查询用户ID
+    shared_with_users_ids = []
+    for username in shared_with_usernames:
+        user = users_collection.find_one({'username': username})
+        if user:
+            shared_with_users_ids.append(user['_id'])
     
     # 创建题库
     bank_id = question_banks_collection.insert_one({
@@ -585,8 +713,9 @@ def update_question_bank(bank_id):
     bank = question_banks_collection.find_one({'_id': ObjectId(bank_id)})
     if not bank: return jsonify({'error': '题库不存在'}), 404
     
-    # 鉴权：只有题库所有者可以更新
-    if str(bank['owner_id']) != session['user_id']:
+    # 鉴权：题库所有者或被共享的用户可以更新
+    user_id = ObjectId(session['user_id'])
+    if str(bank['owner_id']) != session['user_id'] and user_id not in bank.get('shared_with_users', []):
         return jsonify({'error': '无权操作此题库'}), 403
     
     # 构建更新数据
@@ -595,7 +724,12 @@ def update_question_bank(bank_id):
     if 'description' in data: update_data['description'] = data['description']
     if 'is_public' in data: update_data['is_public'] = data['is_public']
     if 'shared_with_users' in data:
-        shared_with_users_ids = [ObjectId(user_id) for user_id in data['shared_with_users']]
+        # 根据用户名查询用户ID
+        shared_with_users_ids = []
+        for username in data['shared_with_users']:
+            user = users_collection.find_one({'username': username})
+            if user:
+                shared_with_users_ids.append(user['_id'])
         update_data['shared_with_users'] = shared_with_users_ids
     update_data['updated_at'] = datetime.datetime.now()
     
@@ -643,8 +777,9 @@ def add_question_to_bank(bank_id):
     bank = question_banks_collection.find_one({'_id': ObjectId(bank_id)})
     if not bank: return jsonify({'error': '题库不存在'}), 404
     
-    # 鉴权：只有题库所有者可以添加题目
-    if str(bank['owner_id']) != session['user_id']:
+    # 鉴权：题库所有者或被共享的用户可以添加题目
+    user_id = ObjectId(session['user_id'])
+    if str(bank['owner_id']) != session['user_id'] and user_id not in bank.get('shared_with_users', []):
         return jsonify({'error': '无权操作此题库'}), 403
     
     # 检查题目是否存在
@@ -667,6 +802,69 @@ def add_question_to_bank(bank_id):
     
     return jsonify({'message': '题目添加到题库成功'}), 201
 
+# 直接在题库中创建题目
+@app.route('/api/question_banks/<bank_id>/questions/create', methods=['POST'])
+@login_required
+def create_question_for_bank(bank_id):
+    data = request.get_json()
+    if not data.get('type') or not data.get('content'): 
+        return jsonify({'error': '问题类型和内容不能为空'}), 400
+    
+    # 检查题库是否存在
+    bank = question_banks_collection.find_one({'_id': ObjectId(bank_id)})
+    if not bank: return jsonify({'error': '题库不存在'}), 404
+    
+    # 鉴权：题库所有者或被共享的用户可以创建题目
+    user_id = ObjectId(session['user_id'])
+    if str(bank['owner_id']) != session['user_id'] and user_id not in bank.get('shared_with_users', []):
+        return jsonify({'error': '无权操作此题库'}), 403
+    
+    # 创建问题文档，包含所有必要字段
+    new_q_id = ObjectId()
+    question_doc = {
+        '_id': new_q_id,
+        'base_question_id': new_q_id, # 新建题目基础ID就是自己
+        'version': 1,
+        'previous_version_id': None,
+        'owner_id': ObjectId(session['user_id']),
+        'is_public': False,
+        'shared_with_users': [],
+        'used_in_surveys': [], # 直接在题库创建的题目，暂时没有被任何问卷使用
+        'survey_id': None, # 直接在题库创建的题目，没有所属问卷
+        'is_required': data.get('is_required', False), # 是否必答
+        'order': 1, # 直接在题库创建的题目，order设为1
+        'jumps': data.get('jumps', []), # 题目跳转规则
+        
+        # 题干属性
+        'type': data.get('type'),
+        'content': data.get('content'),
+        'options': data.get('options', []),
+        'min_choices': data.get('min_choices'),
+        'max_choices': data.get('max_choices'),
+        'min_length': data.get('min_length'),
+        'max_length': data.get('max_length'),
+        'min_value': data.get('min_value'),
+        'max_value': data.get('max_value'),
+        'is_integer': data.get('is_integer')
+    }
+    questions_collection.insert_one(question_doc)
+    
+    # 获取题目的base_question_id
+    base_question_id = question_doc.get('base_question_id')
+    
+    # 检查题目是否已经在题库中
+    if base_question_id in bank.get('questions', []):
+        return jsonify({'error': '题目已在题库中'}), 400
+    
+    # 向题库添加题目
+    question_banks_collection.update_one(
+        {'_id': ObjectId(bank_id)},
+        {'$push': {'questions': base_question_id},
+         '$set': {'updated_at': datetime.datetime.now()}}
+    )
+    
+    return jsonify({'message': '题目创建并添加到题库成功', 'question_id': str(new_q_id)}), 201
+
 # 从题库移除题目
 @app.route('/api/question_banks/<bank_id>/questions/<question_id>', methods=['DELETE'])
 @login_required
@@ -675,8 +873,9 @@ def remove_question_from_bank(bank_id, question_id):
     bank = question_banks_collection.find_one({'_id': ObjectId(bank_id)})
     if not bank: return jsonify({'error': '题库不存在'}), 404
     
-    # 鉴权：只有题库所有者可以移除题目
-    if str(bank['owner_id']) != session['user_id']:
+    # 鉴权：题库所有者或被共享的用户可以移除题目
+    user_id = ObjectId(session['user_id'])
+    if str(bank['owner_id']) != session['user_id'] and user_id not in bank.get('shared_with_users', []):
         return jsonify({'error': '无权操作此题库'}), 403
     
     # 检查题目是否存在
@@ -741,22 +940,33 @@ def reuse_question(survey_id, survey):
     order = len(existing_questions) + 1
     
     # 检查是否有权访问该题目
-    if not question.get('is_public') and \
-       str(question['owner_id']) != session['user_id'] and \
-       ObjectId(session['user_id']) not in question.get('shared_with_users', []):
+    user_id = ObjectId(session['user_id'])
+    has_access = False
+    
+    # 检查题目本身的权限
+    if question.get('is_public') or \
+       str(question['owner_id']) == session['user_id'] or \
+       user_id in question.get('shared_with_users', []):
+        has_access = True
+    else:
+        # 检查题目所在题库的权限
+        banks = list(question_banks_collection.find({}))
+        for bank in banks:
+            if question.get('base_question_id') in bank.get('questions', []) and \
+               (str(bank['owner_id']) == session['user_id'] or \
+                user_id in bank.get('shared_with_users', [])):
+                has_access = True
+                break
+    
+    if not has_access:
         return jsonify({'error': '无权复用此题目'}), 403
     
-    # 获取该base_question_id下的最大版本号
-    max_version = 1
-    existing_versions = list(questions_collection.find({'base_question_id': question['base_question_id']}))
-    if existing_versions:
-        max_version = max(v.get('version', 1) for v in existing_versions) + 1
-    
     # 创建新的题目实例，关联到当前问卷
+    # 注意：复用只是创建引用，不应增加version，version只在内容被修改时递增
     new_q_id = ObjectId()
     new_question = question.copy()
     new_question['_id'] = new_q_id
-    new_question['version'] = max_version
+    # 保持原有的version不变，复用不是修改
     new_question['previous_version_id'] = question['_id']
     new_question['owner_id'] = ObjectId(session['user_id']) # 设置为当前用户
     new_question['used_in_surveys'] = [ObjectId(survey_id)]

@@ -1,5 +1,5 @@
 import Alpine from 'https://cdn.jsdelivr.net/npm/alpinejs@3.13.3/dist/module.esm.js';
-import { checkAuth, login, register, logout, getMySurveys, createSurvey, getSurveyDetail, publishSurvey, closeSurvey, addQuestion, updateQuestion, getFillSurvey, submitSurvey as apiSubmitSurvey, getSurveyStatistics, shareQuestion, getQuestionHistory, restoreQuestionVersion, getQuestionUsage, createQuestionBank, getQuestionBanks, getQuestionBankDetail, updateQuestionBank, deleteQuestionBank, addQuestionToBank, removeQuestionFromBank, getBankQuestions, getCrossSurveyStatistics, reuseQuestion } from './api.js';
+import { checkAuth, login, register, logout, getMySurveys, createSurvey, getSurveyDetail, publishSurvey, closeSurvey, addQuestion, updateQuestion, getFillSurvey, submitSurvey as apiSubmitSurvey, getSurveyStatistics, shareQuestion, getQuestionHistory, restoreQuestionVersion, getQuestionUsage, createQuestionBank, getQuestionBanks, getQuestionBankDetail, updateQuestionBank, deleteQuestionBank, addQuestionToBank, removeQuestionFromBank, getBankQuestions, getCrossSurveyStatistics, reuseQuestion, createQuestionForBank } from './api.js';
 
 function initApp() {
     return {
@@ -17,7 +17,7 @@ function initApp() {
         currentSurveyQuestions: [],
         surveyStatistics: {},
         fillSurveyData: null,
-        
+
         // 题库相关状态
         questionBanks: [],
         currentBank: null,
@@ -26,7 +26,7 @@ function initApp() {
         bankDesc: '',
         bankPublic: false,
         bankSharedUsers: '',
-        
+
         // 题目管理相关状态
         showShareModal: false,
         shareQuestionId: null,
@@ -40,7 +40,13 @@ function initApp() {
         crossStats: null,
         showEditModal: false,
         editingQuestion: null,
-        
+        showUpdateOptionModal: false,
+        updateOption: null,
+        isUsedInPublishedSurvey: false,
+        showEditQuestionModal: false,
+        editQuestionId: null,
+        saveAsNewQuestion: false,
+
         // 表单数据
         loginUsername: '',
         loginPassword: '',
@@ -66,27 +72,52 @@ function initApp() {
         jumpCondition: 'equals',
         jumpValue: '',
         jumpTarget: 'null',
-        
+
         // 视图状态
         currentTab: 'my-surveys',
         showJumpModal: false,
         showFillModal: false,
         fillSlug: '',
-        
+
+        // 重置所有状态
+        resetState() {
+            this.showFillModal = false;
+            this.showJumpModal = false;
+            this.showShareModal = false;
+            this.showHistoryModal = false;
+            this.showUsageModal = false;
+            this.showCrossStatsModal = false;
+            this.showEditModal = false;
+            this.showUpdateOptionModal = false;
+            this.updateOption = null;
+            this.isUsedInPublishedSurvey = false;
+            this.showEditQuestionModal = false;
+            this.editQuestionId = null;
+            this.saveAsNewQuestion = false;
+        },
+
         // 初始化
         async init() {
+            // 1. 优先检查 URL 参数
             const urlParams = new URLSearchParams(window.location.search);
-            const slug = urlParams.get('slug');
-            if (slug) {
-                await this.loadFillSurvey(slug);
+            const slugFromUrl = urlParams.get('slug');
+
+            if (slugFromUrl) {
+                // 2. 如果有 slug，直接进入填写状态，不显示弹窗
+                this.fillSlug = slugFromUrl;
+                this.currentTab = 'fill-survey';
+                this.showFillModal = false; // 强制关闭弹窗
+                await this.loadFillSurvey(slugFromUrl);
             } else {
+                // 3. 只有没有 slug 时，才加载默认状态
+                this.showFillModal = false; // 确保弹窗关闭
                 await this.checkAuthStatus();
                 await this.loadMySurveys();
                 // 加载题库列表
                 await this.loadQuestionBanks();
             }
         },
-        
+
         // 认证相关
         async checkAuthStatus() {
             const user = await checkAuth();
@@ -95,7 +126,7 @@ function initApp() {
                 this.currentUserId = user.user_id;
             }
         },
-        
+
         async login() {
             await login(this.loginUsername, this.loginPassword);
             await this.checkAuthStatus();
@@ -103,18 +134,18 @@ function initApp() {
             await this.loadQuestionBanks();
             this.currentTab = 'my-surveys';
         },
-        
+
         async register() {
             await register(this.regUsername, this.regPassword, this.regEmail);
             alert('注册成功，请登录');
             this.currentTab = 'login';
         },
-        
+
         async logout() {
             await logout();
             location.href = '/';
         },
-        
+
         // 问卷管理
         async loadMySurveys() {
             if (!this.currentUserId) {
@@ -123,7 +154,7 @@ function initApp() {
             }
             this.surveys = await getMySurveys();
         },
-        
+
         async createSurvey() {
             const res = await createSurvey(
                 this.surveyTitle,
@@ -134,7 +165,7 @@ function initApp() {
             );
             await this.viewSurvey(res.survey_id);
         },
-        
+
         async viewSurvey(id) {
             this.currentSurveyId = id;
             const data = await getSurveyDetail(id);
@@ -142,13 +173,13 @@ function initApp() {
             this.currentSurveyQuestions = data.questions;
             this.currentTab = 'survey-detail';
         },
-        
+
         async publishSurvey(id) {
             await publishSurvey(id);
             alert('发布成功！');
             await this.viewSurvey(id);
         },
-        
+
         async closeSurvey(id) {
             if (confirm('确定要关闭此问卷吗？关闭后将无法继续收集数据。')) {
                 await closeSurvey(id);
@@ -156,7 +187,7 @@ function initApp() {
                 await this.viewSurvey(id);
             }
         },
-        
+
         async addQuestion() {
             // 验证文本题的长度设置
             if (this.qType === 'text') {
@@ -167,7 +198,7 @@ function initApp() {
                     return;
                 }
             }
-            
+
             // 验证数字题的数值范围设置
             if (this.qType === 'number') {
                 const minValue = parseFloat(this.minValue) || null;
@@ -177,13 +208,13 @@ function initApp() {
                     return;
                 }
             }
-            
+
             const optionsRaw = this.qOptions;
             const options = optionsRaw.split('\n').filter(l => l.includes('|')).map(l => {
                 const [val, text] = l.split('|');
                 return { value: val.trim(), text: text.trim(), id: val.trim() };
             });
-            
+
             const questionData = {
                 type: this.qType,
                 content: this.qContent,
@@ -197,10 +228,10 @@ function initApp() {
                 max_value: parseFloat(this.maxValue) || null,
                 is_integer: this.isInteger
             };
-            
+
             await addQuestion(this.currentSurveyId, questionData);
             await this.viewSurvey(this.currentSurveyId);
-            
+
             // 重置表单
             this.qContent = '';
             this.qOptions = '';
@@ -213,7 +244,7 @@ function initApp() {
             this.isInteger = false;
             this.qRequired = false;
         },
-        
+
         // 跳转规则设置
         async showJumpSettings(qId, order) {
             this.jumpSettingQId = qId;
@@ -221,33 +252,33 @@ function initApp() {
             this.jumpTarget = 'null';
             this.showJumpModal = true;
         },
-        
+
         async saveJumpRule() {
             const jumps = [{
                 logic: 'and',
                 conditions: [{ condition: this.jumpCondition, value: this.jumpValue }],
                 target_question_id: this.jumpTarget === 'null' ? null : this.jumpTarget
             }];
-            
+
             await updateQuestion(this.jumpSettingQId, { jumps });
             alert('跳转规则保存成功');
             this.showJumpModal = false;
             await this.viewSurvey(this.currentSurveyId);
         },
-        
+
         // 填写问卷
         showFillPrompt() {
             this.fillSlug = '';
             this.showFillModal = true;
         },
-        
+
         async submitFillSlug() {
             if (this.fillSlug) {
                 this.showFillModal = false;
                 await this.loadFillSurvey(this.fillSlug);
             }
         },
-        
+
         async loadFillSurvey(slug) {
             try {
                 this.currentFillSlug = slug;
@@ -274,12 +305,12 @@ function initApp() {
                 }
             }
         },
-        
+
         validateAndSaveCurrentAnswer() {
             const q = this.currentQuestions[this.currentQuestionIndex];
             let val = null;
             let text = null;
-            
+
             if (q.type === 'single_choice') {
                 const checked = document.querySelector(`input[name="fill-q-${q._id}"]:checked`);
                 val = checked ? checked.value : null;
@@ -291,15 +322,15 @@ function initApp() {
             } else if (q.type === 'number') {
                 val = document.getElementById(`fill-q-num-${q._id}`).value;
             }
-            
+
             const qName = `第 ${q.order} 题`;
-            
+
             // 必填校验
             const isEmpty = !val || (Array.isArray(val) && val.length === 0) || (typeof val === 'string' && val.trim() === '');
             if (q.is_required && isEmpty) {
                 alert(`${qName} 是必填项`); return false;
             }
-            
+
             // 限制校验
             if (!isEmpty) {
                 if (q.type === 'multiple_choice') {
@@ -318,24 +349,24 @@ function initApp() {
                     if (q.max_value !== null && num > q.max_value) { alert(`${qName} 不能大于 ${q.max_value}`); return false; }
                 }
             }
-            
+
             this.allResponses[q._id] = { question_id: q._id, value: val, text: text };
             return true;
         },
-        
+
         goToNextQuestion() {
             if (!this.validateAndSaveCurrentAnswer()) return;
-            
+
             const q = this.currentQuestions[this.currentQuestionIndex];
             const answer = this.allResponses[q._id];
-            
+
             // 判断跳转逻辑
             if (q.jumps && q.jumps.length > 0 && answer.value !== null && answer.value !== "") {
                 for (let jump of q.jumps) {
                     let matched = false;
                     for (let cond of jump.conditions) {
                         const targetVal = String(cond.value);
-                        
+
                         if (Array.isArray(answer.value)) {
                             // 多选题的包含判定
                             if (cond.condition === 'equals' || cond.condition === 'contains') {
@@ -348,7 +379,7 @@ function initApp() {
                             if (cond.condition === 'contains' && userVal.includes(targetVal)) matched = true;
                         }
                     }
-                    
+
                     if (matched) {
                         if (jump.target_question_id === null) {
                             this.currentQuestionIndex = this.currentQuestions.length;
@@ -363,7 +394,7 @@ function initApp() {
                     }
                 }
             }
-            
+
             // 默认进入物理顺序上的下一题
             if (this.currentQuestionIndex < this.currentQuestions.length - 1) {
                 this.currentQuestionIndex++;
@@ -371,7 +402,7 @@ function initApp() {
                 this.currentQuestionIndex = this.currentQuestions.length;
             }
         },
-        
+
         async submitSurvey() {
             // 这里只需要发送前端真实填过的题目
             const responses = Object.values(this.allResponses).filter(r => r.value !== null && r.value !== "" && !(Array.isArray(r.value) && r.value.length === 0));
@@ -379,7 +410,7 @@ function initApp() {
             alert('提交成功！感谢您的参与。');
             window.location.href = '/';
         },
-        
+
         // 统计结果
         async viewStats(id) {
             this.currentSurveyId = id; // 同步更新当前选中的问卷 ID
@@ -387,12 +418,12 @@ function initApp() {
             this.surveyStatistics = data.statistics;
             this.currentTab = 'stats';
         },
-        
+
         // 题库管理
         async loadQuestionBanks() {
             this.questionBanks = (await getQuestionBanks()).banks;
         },
-        
+
         async createBank() {
             const sharedUsers = this.bankSharedUsers.split(',').map(u => u.trim()).filter(u => u);
             await createQuestionBank(this.bankName, this.bankDesc, this.bankPublic, sharedUsers);
@@ -404,7 +435,7 @@ function initApp() {
             this.bankPublic = false;
             this.bankSharedUsers = '';
         },
-        
+
         async viewBank(bankId) {
             const data = await getQuestionBankDetail(bankId);
             this.currentBank = data.bank;
@@ -412,7 +443,7 @@ function initApp() {
             this.currentBankQuestions = questionsData.questions;
             this.currentTab = 'bank-detail';
         },
-        
+
         async deleteBank(bankId) {
             if (confirm('确定要删除此题库吗？')) {
                 await deleteQuestionBank(bankId);
@@ -420,21 +451,78 @@ function initApp() {
                 await this.loadQuestionBanks();
             }
         },
-        
+
         async addQuestionToBank(bankId, questionId) {
             await addQuestionToBank(bankId, questionId);
             alert('题目添加到题库成功！');
             await this.viewBank(bankId);
         },
-        
-        async removeQuestionFromBank(bankId, questionId) {
+
+        async removeQuestionFromBankConfirm(bankId, questionId) {
             if (confirm('确定要从题库中移除此题目吗？')) {
                 await removeQuestionFromBank(bankId, questionId);
                 alert('题目从题库移除成功！');
                 await this.viewBank(bankId);
             }
         },
-        
+
+        async addQuestionToBankDirectly(bankId) {
+            // 验证文本题的长度设置
+            if (this.qType === 'text') {
+                const minLength = parseInt(this.minLength) || 0;
+                const maxLength = parseInt(this.maxLength) || null;
+                if (maxLength !== null && maxLength < minLength) {
+                    alert('文本题的最大字数不能小于最小字数');
+                    return;
+                }
+            }
+
+            // 验证数字题的数值范围设置
+            if (this.qType === 'number') {
+                const minValue = parseFloat(this.minValue) || null;
+                const maxValue = parseFloat(this.maxValue) || null;
+                if (minValue !== null && maxValue !== null && maxValue < minValue) {
+                    alert('数字题的最大值不能小于最小值');
+                    return;
+                }
+            }
+
+            const optionsRaw = this.qOptions;
+            const options = optionsRaw.split('\n').filter(l => l.includes('|')).map(l => {
+                const [val, text] = l.split('|');
+                return { value: val.trim(), text: text.trim(), id: val.trim() };
+            });
+
+            const questionData = {
+                type: this.qType,
+                content: this.qContent,
+                is_required: this.qRequired,
+                options: options,
+                min_choices: parseInt(this.minChoices) || null,
+                max_choices: parseInt(this.maxChoices) || null,
+                min_length: parseInt(this.minLength) || null,
+                max_length: parseInt(this.maxLength) || null,
+                min_value: parseFloat(this.minValue) || null,
+                max_value: parseFloat(this.maxValue) || null,
+                is_integer: this.isInteger
+            };
+
+            await createQuestionForBank(bankId, questionData);
+            await this.viewBank(bankId);
+
+            // 重置表单
+            this.qContent = '';
+            this.qOptions = '';
+            this.minChoices = '';
+            this.maxChoices = '';
+            this.minLength = '';
+            this.maxLength = '';
+            this.minValue = '';
+            this.maxValue = '';
+            this.isInteger = false;
+            this.qRequired = false;
+        },
+
         // 题目管理
         async showShareModalFunc(questionId) {
             this.shareQuestionId = questionId;
@@ -442,21 +530,21 @@ function initApp() {
             this.shareUsers = '';
             this.showShareModal = true;
         },
-        
+
         async saveShareSettings() {
             const sharedUsers = this.shareUsers.split(',').map(u => u.trim()).filter(u => u);
             await shareQuestion(this.shareQuestionId, this.shareIsPublic, sharedUsers);
             alert('分享设置保存成功！');
             this.showShareModal = false;
         },
-        
+
         async showHistoryModalFunc(questionId) {
             this.shareQuestionId = questionId;
             const data = await getQuestionHistory(questionId);
             this.questionHistory = data.history;
             this.showHistoryModal = true;
         },
-        
+
         async restoreVersion(questionId, versionId) {
             if (confirm('确定要恢复到此版本吗？')) {
                 await restoreQuestionVersion(questionId, versionId, this.currentSurveyId);
@@ -465,19 +553,19 @@ function initApp() {
                 await this.viewSurvey(this.currentSurveyId);
             }
         },
-        
+
         async showUsageModalFunc(questionId) {
             const data = await getQuestionUsage(questionId);
             this.questionUsage = data.usage;
             this.showUsageModal = true;
         },
-        
+
         async showCrossStatsModalFunc(baseQuestionId) {
             const data = await getCrossSurveyStatistics(baseQuestionId);
             this.crossStats = data.statistics;
             this.showCrossStatsModal = true;
         },
-        
+
         // 从题库选题
         async showReuseFromBankModal() {
             await this.loadQuestionBanks();
@@ -493,56 +581,59 @@ function initApp() {
             }
             this.currentTab = 'reuse-from-bank';
         },
-        
+
         async reuseQuestionFromBank(surveyId, questionId) {
             await reuseQuestion(surveyId, questionId);
             alert('题目复用成功！');
             await this.viewSurvey(surveyId);
         },
-        
+
         // 添加到题库模态框
         showAddToBankModal(questionId) {
             this.shareQuestionId = questionId;
             this.loadQuestionBanks();
             this.currentTab = 'add-to-bank';
         },
-        
+
         async confirmAddToBank(bankId, questionId) {
             await addQuestionToBank(bankId, questionId);
             alert('题目添加到题库成功！');
             this.currentTab = 'survey-detail';
         },
-        
-        // 修改题目
-        editQuestion(question) {
-            this.editingQuestion = question;
-            // 填充表单数据
-            this.qType = question.type;
-            this.qContent = question.content;
-            this.qRequired = question.is_required;
-            
-            // 填充选项
-            if (question.options && question.options.length > 0) {
-                this.qOptions = question.options.map(opt => `${opt.value}|${opt.text}`).join('\n');
-            } else {
-                this.qOptions = '';
+
+        // 编辑题目（触发弹窗）
+        editQuestion(q) {
+            // 填充原题目数据到表单
+            this.editQuestionId = q._id;
+            this.qType = q.type;
+            this.qContent = q.content;
+            this.qRequired = q.is_required;
+            // 解析选项（适配"值|文本"格式）
+            this.qOptions = q.options ? q.options.map(opt => `${opt.value}|${opt.text}`).join('\n') : '';
+            // 填充不同题型的专属字段
+            if (q.type === 'multiple_choice') {
+                this.minChoices = q.min_choices || '';
+                this.maxChoices = q.max_choices || '';
+            } else if (q.type === 'text') {
+                this.minLength = q.min_length || '';
+                this.maxLength = q.max_length || '';
+            } else if (q.type === 'number') {
+                this.minValue = q.min_value || '';
+                this.maxValue = q.max_value || '';
+                this.isInteger = q.is_integer || false;
             }
-            
-            // 填充其他属性
-            this.minChoices = question.min_choices || '';
-            this.maxChoices = question.max_choices || '';
-            this.minLength = question.min_length || '';
-            this.maxLength = question.max_length || '';
-            this.minValue = question.min_value || '';
-            this.maxValue = question.max_value || '';
-            this.isInteger = question.is_integer || false;
-            
-            this.showEditModal = true;
+            this.saveAsNewQuestion = false; // 默认不另存
+            this.showEditQuestionModal = true;
         },
-        
-        async saveQuestionChanges() {
-            if (!this.editingQuestion) return;
-            
+
+        // 保存编辑后的题目（区分覆盖/另存）
+        async saveEditedQuestion() {
+            // 基础校验
+            if (!this.qContent.trim()) {
+                alert('题目内容不能为空！');
+                return;
+            }
+
             // 验证文本题的长度设置
             if (this.qType === 'text') {
                 const minLength = parseInt(this.minLength) || 0;
@@ -552,7 +643,7 @@ function initApp() {
                     return;
                 }
             }
-            
+
             // 验证数字题的数值范围设置
             if (this.qType === 'number') {
                 const minValue = parseFloat(this.minValue) || null;
@@ -562,17 +653,24 @@ function initApp() {
                     return;
                 }
             }
-            
+
+            // 构造题目数据
             const optionsRaw = this.qOptions;
             const options = optionsRaw.split('\n').filter(l => l.includes('|')).map(l => {
                 const [val, text] = l.split('|');
                 return { value: val.trim(), text: text.trim(), id: val.trim() };
             });
-            
+
             const questionData = {
-                type: this.qType,
-                content: this.qContent,
+                survey_id: this.currentSurveyId, // 必须传，后端用来定位问卷内的 context
+                save_as_new: this.saveAsNewQuestion,
+
+                // 上下文属性
                 is_required: this.qRequired,
+
+                // 题干属性
+                type: this.qType,
+                content: this.qContent.trim(),
                 options: options,
                 min_choices: parseInt(this.minChoices) || null,
                 max_choices: parseInt(this.maxChoices) || null,
@@ -580,15 +678,35 @@ function initApp() {
                 max_length: parseInt(this.maxLength) || null,
                 min_value: parseFloat(this.minValue) || null,
                 max_value: parseFloat(this.maxValue) || null,
-                is_integer: this.isInteger,
-                survey_id: this.currentSurveyId
+                is_integer: this.isInteger
             };
-            
-            await updateQuestion(this.editingQuestion._id, questionData);
-            alert('题目修改成功！');
-            this.showEditModal = false;
-            await this.viewSurvey(this.currentSurveyId);
-        }
+
+            try {
+                if (this.editQuestionId) {
+                    // 编辑现有题目
+                    await updateQuestion(this.editQuestionId, questionData);
+                    alert(this.saveAsNewQuestion ? '题目已另存为新题目！' : '题目修改成功！');
+                } else {
+                    // 新增题目（此分支暂时未使用，保留以备扩展）
+                    if (this.currentBank) {
+                        await createQuestionForBank(this.currentBank._id, questionData);
+                        alert('题目添加成功！');
+                    }
+                }
+
+                this.showEditQuestionModal = false;
+
+                // 刷新题库列表
+                if (this.currentTab === 'bank-detail' && this.currentBank) {
+                    await this.viewBank(this.currentBank._id);
+                } else if (this.currentSurveyId) {
+                    // 重新拉取问卷详情以更新合并后的视图
+                    await this.viewSurvey(this.currentSurveyId);
+                }
+            } catch (error) {
+                alert('操作失败：' + error.message);
+            }
+        },
     };
 }
 

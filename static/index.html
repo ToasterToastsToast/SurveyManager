@@ -287,143 +287,7 @@
                                 </div>
                             </div>
 
-                            <!-- 题目使用情况弹窗 -->
-                            <div x-show="showUsageModal"
-                                style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;">
-                                <div class="card" style="width:600px;max-height:80vh;overflow-y:auto;">
-                                    <h3>题目使用情况</h3>
-                                    <template x-if="questionUsage.length === 0">
-                                        <p>该题目尚未被任何问卷使用</p>
-                                    </template>
-                                    <template x-for="usage in questionUsage" :key="usage.survey_id">
-                                        <div class="question-item" style="border-bottom:1px solid #eee;padding:10px 0;">
-                                            <p>问卷：<span x-text="usage.title"></span></p>
-                                            <p>状态：<span x-text="usage.status"></span></p>
-                                            <p>提交数：<span x-text="usage.submission_count"></span></p>
-                                            <p>创建时间：<span x-text="usage.created_at"></span></p>
-                                        </div>
-                                    </template>
-                                    <div style="margin-top:20px;">
-                                        <button @click="showUsageModal = false" style="background:#6c757d;">关闭</button>
-                                    </div>
-                                </div>
-                            </div>
 
-                            <!-- 跨问卷统计弹窗 -->
-                            <div x-show="showCrossStatsModal"
-                                style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;">
-                                <div class="card" style="width:600px;">
-                                    <h3>跨问卷统计结果</h3>
-                                    <template x-if="crossStats">
-                                        <div>
-                                            <h4 x-text="crossStats.content"></h4>
-                                            <p>题型：<span x-text="crossStats.type"></span></p>
-                                            <p>总回答数：<span x-text="crossStats.total_responses"></span></p>
-                                            <p>使用问卷数：<span x-text="crossStats.survey_count"></span></p>
-
-                                            <!-- 单选/多选统计 -->
-                                            <template
-                                                x-if="crossStats.type === 'single_choice' || crossStats.type === 'multiple_choice'">
-                                                <div>
-                                                    <h5>选项分布</h5>
-                                                    <template x-for="(count, val) in crossStats.results" :key="val">
-                                                        <div class="stats-item">
-                                                            <span x-text="val"></span>：<span x-text="count"></span> 票
-                                                        </div>
-                                                    </template>
-                                                </div>
-                                            </template>
-
-                                            <!-- 文本题统计 -->
-                                            <template x-if="crossStats.type === 'text'">
-                                                <div style="max-height: 300px; overflow-y: auto; padding-right: 5px;">
-                                                    <h5>回答内容</h5>
-                                                    <template x-for="(text, index) in crossStats.results" :key="index">
-                                                        <div class="stats-item" x-text="text"></div>
-                                                    </template>
-                                                </div>
-                                            </template>
-
-                                            <!-- 数字题统计 -->
-                                            <template x-if="crossStats.type === 'number'">
-                                                <div>
-                                                    <h5>统计结果</h5>
-                                                    <p>平均值：<span x-text="crossStats.results.average"></span></p>
-                                                    <p>所有数值：<span x-text="crossStats.results.values.join(', ')"></span>
-                                                    </p>
-                                                </div>
-                                            </template>
-                                        </div>
-                                    </template>
-                                    <div style="margin-top:20px;">
-                                        <button @click="showCrossStatsModal = false"
-                                            style="background:#6c757d;">关闭</button>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- 修改题目弹窗 -->
-                            <div x-show="showEditModal"
-                                style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;">
-                                <div class="card" style="width:600px;">
-                                    <h3>修改题目</h3>
-                                    <div>
-                                        <label>题型：</label>
-                                        <select x-model="qType">
-                                            <option value="single_choice">单选题</option>
-                                            <option value="multiple_choice">多选题</option>
-                                            <option value="text">文本题</option>
-                                            <option value="number">数字题</option>
-                                        </select>
-                                    </div>
-                                    <input type="text" x-model="qContent" placeholder="题目内容（必填）">
-                                    <label>
-                                        <input type="checkbox" x-model="qRequired"> 必填项
-                                    </label>
-
-                                    <!-- 单选/多选题选项 -->
-                                    <template x-if="qType === 'single_choice' || qType === 'multiple_choice'">
-                                        <div>
-                                            <label>选项（每行一个，格式：值|显示文本，例如：1|是）</label>
-                                            <textarea x-model="qOptions" rows="4"
-                                                placeholder="1|选项A&#10;2|选项B"></textarea>
-                                        </div>
-                                    </template>
-
-                                    <!-- 多选题：最少/最多选择数 -->
-                                    <template x-if="qType === 'multiple_choice'">
-                                        <div>
-                                            <input type="number" x-model="minChoices" placeholder="最少选择数">
-                                            <input type="number" x-model="maxChoices" placeholder="最多选择数">
-                                        </div>
-                                    </template>
-
-                                    <!-- 文本题：字数限制 -->
-                                    <template x-if="qType === 'text'">
-                                        <div>
-                                            <input type="number" x-model="minLength" placeholder="最少字数">
-                                            <input type="number" x-model="maxLength" placeholder="最多字数">
-                                        </div>
-                                    </template>
-
-                                    <!-- 数字题：范围限制 -->
-                                    <template x-if="qType === 'number'">
-                                        <div>
-                                            <input type="number" x-model="minValue" placeholder="最小值">
-                                            <input type="number" x-model="maxValue" placeholder="最大值">
-                                            <label>
-                                                <input type="checkbox" x-model="isInteger"> 仅允许整数
-                                            </label>
-                                        </div>
-                                    </template>
-
-                                    <div style="margin-top:20px;">
-                                        <button @click="saveQuestionChanges()">保存修改</button>
-                                        <button @click="showEditModal = false"
-                                            style="margin-left:10px;background:#6c757d;">取消</button>
-                                    </div>
-                                </div>
-                            </div>
 
 
                         </div>
@@ -488,8 +352,8 @@
                                     </label>
                                 </div>
                                 <div>
-                                    <label>共享给用户（逗号分隔用户ID）：</label>
-                                    <input type="text" x-model="bankSharedUsers" placeholder="例如：123456,789012">
+                                    <label>共享给用户（逗号分隔用户名）：</label>
+                                    <input type="text" x-model="bankSharedUsers" placeholder="例如：user1,user2">
                                 </div>
                                 <button @click="createBank()">创建题库</button>
                             </div>
@@ -526,6 +390,61 @@
                                     style="background: #6c757d;">返回题库列表</button>
                             </div>
 
+                            <!-- 添加题目 -->
+                            <div class="card">
+                                <h3>添加题目</h3>
+                                <div>
+                                    <label>题型：</label>
+                                    <select x-model="qType">
+                                        <option value="single_choice">单选题</option>
+                                        <option value="multiple_choice">多选题</option>
+                                        <option value="text">文本题</option>
+                                        <option value="number">数字题</option>
+                                    </select>
+                                </div>
+                                <input type="text" x-model="qContent" placeholder="题目内容（必填）">
+                                <label>
+                                    <input type="checkbox" x-model="qRequired"> 必填项
+                                </label>
+
+                                <!-- 单选/多选题选项 -->
+                                <template x-if="qType === 'single_choice' || qType === 'multiple_choice'">
+                                    <div>
+                                        <label>选项（每行一个，格式：值|显示文本，例如：1|是）</label>
+                                        <textarea x-model="qOptions" rows="4" placeholder="1|选项A&#10;2|选项B"></textarea>
+                                    </div>
+                                </template>
+
+                                <!-- 多选题：最少/最多选择数 -->
+                                <template x-if="qType === 'multiple_choice'">
+                                    <div>
+                                        <input type="number" x-model="minChoices" placeholder="最少选择数">
+                                        <input type="number" x-model="maxChoices" placeholder="最多选择数">
+                                    </div>
+                                </template>
+
+                                <!-- 文本题：字数限制 -->
+                                <template x-if="qType === 'text'">
+                                    <div>
+                                        <input type="number" x-model="minLength" placeholder="最少字数">
+                                        <input type="number" x-model="maxLength" placeholder="最多字数">
+                                    </div>
+                                </template>
+
+                                <!-- 数字题：范围限制 -->
+                                <template x-if="qType === 'number'">
+                                    <div>
+                                        <input type="number" x-model="minValue" placeholder="最小值">
+                                        <input type="number" x-model="maxValue" placeholder="最大值">
+                                        <label>
+                                            <input type="checkbox" x-model="isInteger"> 仅允许整数
+                                        </label>
+                                    </div>
+                                </template>
+
+                                <button @click="addQuestionToBankDirectly(currentBank._id)">添加题目</button>
+                            </div>
+
                             <!-- 题库题目列表 -->
                             <div class="card">
                                 <h3>题库题目</h3>
@@ -547,7 +466,10 @@
                                                 </template>
                                             </ul>
                                         </template>
-                                        <button @click="removeQuestionFromBank(currentBank._id, q._id)">从题库移除</button>
+                                        <button @click="editQuestion(q)">更新题目</button>
+                                        <button @click="showUsageModalFunc(q._id)">查看使用情况</button>
+                                        <button
+                                            @click="removeQuestionFromBankConfirm(currentBank._id, q._id)">从题库移除</button>
                                     </div>
                                 </template>
                             </div>
@@ -689,7 +611,264 @@
         </div>
     </div>
 
+    <!-- 题目使用情况弹窗 -->
+    <div x-show="showUsageModal"
+        style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;">
+        <div class="card" style="width:600px;max-height:80vh;overflow-y:auto;">
+            <h3>题目使用情况</h3>
+            <template x-if="questionUsage.length === 0">
+                <p>该题目尚未被任何问卷使用</p>
+            </template>
+            <template x-for="usage in questionUsage" :key="usage.survey_id">
+                <div class="question-item" style="border-bottom:1px solid #eee;padding:10px 0;">
+                    <p>问卷：<span x-text="usage.title"></span></p>
+                    <p>状态：<span x-text="usage.status"></span></p>
+                    <p>提交数：<span x-text="usage.submission_count"></span></p>
+                    <p>创建时间：<span x-text="usage.created_at"></span></p>
+                </div>
+            </template>
+            <div style="margin-top:20px;">
+                <button @click="showUsageModal = false" style="background:#6c757d;">关闭</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 跨问卷统计弹窗 -->
+    <div x-show="showCrossStatsModal"
+        style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;">
+        <div class="card" style="width:600px;">
+            <h3>跨问卷统计结果</h3>
+            <template x-if="crossStats">
+                <div>
+                    <h4 x-text="crossStats.content"></h4>
+                    <p>题型：<span x-text="crossStats.type"></span></p>
+                    <p>总回答数：<span x-text="crossStats.total_responses"></span></p>
+                    <p>使用问卷数：<span x-text="crossStats.survey_count"></span></p>
+
+                    <!-- 单选/多选统计 -->
+                    <template x-if="crossStats.type === 'single_choice' || crossStats.type === 'multiple_choice'">
+                        <div>
+                            <h5>选项分布</h5>
+                            <template x-for="(count, val) in crossStats.results" :key="val">
+                                <div class="stats-item">
+                                    <span x-text="val"></span>：<span x-text="count"></span> 票
+                                </div>
+                            </template>
+                        </div>
+                    </template>
+
+                    <!-- 文本题统计 -->
+                    <template x-if="crossStats.type === 'text'">
+                        <div style="max-height: 300px; overflow-y: auto; padding-right: 5px;">
+                            <h5>回答内容</h5>
+                            <template x-for="(text, index) in crossStats.results" :key="index">
+                                <div class="stats-item" x-text="text"></div>
+                            </template>
+                        </div>
+                    </template>
+
+                    <!-- 数字题统计 -->
+                    <template x-if="crossStats.type === 'number'">
+                        <div>
+                            <h5>统计结果</h5>
+                            <p>平均值：<span x-text="crossStats.results.average"></span></p>
+                            <p>所有数值：<span x-text="crossStats.results.values.join(', ')"></span>
+                            </p>
+                        </div>
+                    </template>
+                </div>
+            </template>
+            <div style="margin-top:20px;">
+                <button @click="showCrossStatsModal = false" style="background:#6c757d;">关闭</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 修改题目弹窗 -->
+    <div x-show="showEditModal"
+        style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;">
+        <div class="card" style="width:600px;">
+            <h3>修改题目</h3>
+            <div>
+                <label>题型：</label>
+                <select x-model="qType">
+                    <option value="single_choice">单选题</option>
+                    <option value="multiple_choice">多选题</option>
+                    <option value="text">文本题</option>
+                    <option value="number">数字题</option>
+                </select>
+            </div>
+            <input type="text" x-model="qContent" placeholder="题目内容（必填）">
+            <label>
+                <input type="checkbox" x-model="qRequired"> 必填项
+            </label>
+
+            <!-- 单选/多选题选项 -->
+            <template x-if="qType === 'single_choice' || qType === 'multiple_choice'">
+                <div>
+                    <label>选项（每行一个，格式：值|显示文本，例如：1|是）</label>
+                    <textarea x-model="qOptions" rows="4" placeholder="1|选项A&#10;2|选项B"></textarea>
+                </div>
+            </template>
+
+            <!-- 多选题：最少/最多选择数 -->
+            <template x-if="qType === 'multiple_choice'">
+                <div>
+                    <input type="number" x-model="minChoices" placeholder="最少选择数">
+                    <input type="number" x-model="maxChoices" placeholder="最多选择数">
+                </div>
+            </template>
+
+            <!-- 文本题：字数限制 -->
+            <template x-if="qType === 'text'">
+                <div>
+                    <input type="number" x-model="minLength" placeholder="最少字数">
+                    <input type="number" x-model="maxLength" placeholder="最多字数">
+                </div>
+            </template>
+
+            <!-- 数字题：范围限制 -->
+            <template x-if="qType === 'number'">
+                <div>
+                    <input type="number" x-model="minValue" placeholder="最小值">
+                    <input type="number" x-model="maxValue" placeholder="最大值">
+                    <label>
+                        <input type="checkbox" x-model="isInteger"> 仅允许整数
+                    </label>
+                </div>
+            </template>
+
+            <div style="margin-top:20px;">
+                <button @click="saveQuestionChanges()">保存修改</button>
+                <button @click="showEditModal = false" style="margin-left:10px;background:#6c757d;">取消</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 题目更新操作选择弹窗 -->
+    <div x-show="showUpdateOptionModal"
+        style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;">
+        <div class="card" style="width:500px;">
+            <h3>选择更新方式</h3>
+            <p>请选择您想要的更新方式：</p>
+            <div style="margin:20px 0;">
+                <label style="display:block;margin:10px 0;">
+                    <input type="radio" x-model="updateOption" value="updateOld" checked>
+                    更新旧题目（所有引用此题的问卷将使用新版本）
+                </label>
+                <label style="display:block;margin:10px 0;">
+                    <input type="radio" x-model="updateOption" value="saveAsNew">
+                    另存为新题目（不影响现有问卷）
+                </label>
+            </div>
+            <div style="margin-top:20px;">
+                <button @click="confirmUpdateOption()">确定</button>
+                <button @click="showUpdateOptionModal = false" style="margin-left:10px;background:#6c757d;">取消</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 新增：编辑题目弹窗（含另存为新题选项） -->
+    <div x-show="showEditQuestionModal"
+         style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:999;">
+        <div class="card" style="width:600px;">
+            <h3 x-text="editQuestionId ? '编辑题目' : '添加题目'"></h3>
+            
+            <div style="background: #eef2f7; padding: 10px; border-radius: 8px; margin-bottom: 15px;">
+                <p style="font-weight: bold; margin-bottom: 5px; font-size: 0.9em; color: #555;">问卷内设置（仅影响本问卷）</p>
+                <label>
+                    <input type="checkbox" x-model="qRequired">
+                    <strong>设为必填项</strong>
+                </label>
+            </div>
+
+            <hr>
+
+            <div>
+                <p style="font-weight: bold; margin-bottom: 5px; font-size: 0.9em; color: #555;">题目内容设置</p>
+                <div>
+                    <label>题型：</label>
+                    <select x-model="qType">
+                        <option value="single_choice">单选题</option>
+                        <option value="multiple_choice">多选题</option>
+                        <option value="text">文本题</option>
+                        <option value="number">数字题</option>
+                    </select>
+                </div>
+                <input type="text" x-model="qContent" placeholder="题目内容（必填）" style="width:100%;margin:10px 0;">
+
+                <!-- 单选/多选题选项 -->
+                <template x-if="qType === 'single_choice' || qType === 'multiple_choice'">
+                    <div style="margin:10px 0;">
+                        <label>选项（每行一个，格式：值|显示文本，例如：1|是）</label>
+                        <textarea x-model="qOptions" rows="4" placeholder="1|选项A&#10;2|选项B" style="width:100%;"></textarea>
+                    </div>
+                </template>
+
+                <!-- 多选题：最少/最多选择数 -->
+                <template x-if="qType === 'multiple_choice'">
+                    <div style="margin:10px 0;">
+                        <input type="number" x-model="minChoices" placeholder="最少选择数" style="margin-right:10px;">
+                        <input type="number" x-model="maxChoices" placeholder="最多选择数">
+                    </div>
+                </template>
+
+                <!-- 文本题：字数限制 -->
+                <template x-if="qType === 'text'">
+                    <div style="margin:10px 0;">
+                        <input type="number" x-model="minLength" placeholder="最少字数" style="margin-right:10px;">
+                        <input type="number" x-model="maxLength" placeholder="最多字数">
+                    </div>
+                </template>
+
+                <!-- 数字题：范围限制 -->
+                <template x-if="qType === 'number'">
+                    <div style="margin:10px 0;">
+                        <input type="number" x-model="minValue" placeholder="最小值" style="margin-right:10px;">
+                        <input type="number" x-model="maxValue" placeholder="最大值" style="margin-right:10px;">
+                        <label>
+                            <input type="checkbox" x-model="isInteger"> 仅允许整数
+                        </label>
+                    </div>
+                </template>
+            </div>
+
+            <!-- 仅编辑时显示：另存为新题选项 -->
+            <template x-if="editQuestionId">
+                <div style="margin:15px 0; padding:10px; background:#fff3cd; border:1px solid #ffeeba; border-radius:4px;">
+                    <label style="cursor:pointer; display: block;">
+                        <input type="checkbox" x-model="saveAsNewQuestion">
+                        <span style="color: #856404;">
+                            <strong>作为新版本保存</strong>
+                            <small>(若此题在其他问卷已使用，系统将自动强制勾选)</small>
+                        </span>
+                    </label>
+                </div>
+            </template>
+
+            <div style="margin-top:20px;text-align:right;">
+                <button @click="saveEditedQuestion()" style="background:#28a745;">更新题目与配置</button>
+                <button @click="showEditQuestionModal = false" style="margin-left:10px;background:#6c757d;">取消</button>
+            </div>
+        </div>
+    </div>
+
     <script type="module" src="/static/js/app.js"></script>
+    <script>
+        // 页面加载时强制重置状态
+        window.addEventListener('DOMContentLoaded', function () {
+            // 等待Alpine.js初始化完成
+            setTimeout(function () {
+                if (window.Alpine) {
+                    // 获取Alpine实例并重置状态
+                    const app = window.Alpine.store('app');
+                    if (app && app.resetState) {
+                        app.resetState();
+                    }
+                }
+            }, 100);
+        });
+    </script>
 </body>
 
 </html>

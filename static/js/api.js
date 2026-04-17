@@ -156,3 +156,8 @@ export async function getBankQuestions(bankId) {
 export async function getCrossSurveyStatistics(baseQuestionId) {
     return await api(`/api/questions/${baseQuestionId}/statistics`);
 }
+
+// 题库直接创建题目API
+export async function createQuestionForBank(bankId, questionData) {
+    return await api(`/api/question_banks/${bankId}/questions/create`, 'POST', questionData);
+}
